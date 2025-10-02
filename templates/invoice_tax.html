@@ -1,0 +1,256 @@
+<!DOCTYPE html>
+<html dir="rtl" lang="ar">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>فاتورة ضريبية {{ invoice.number }}</title>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Tajawal:wght@400;700&display=swap');
+        
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Tajawal', Arial, sans-serif;
+            direction: rtl;
+            text-align: right;
+            font-size: 12px;
+            line-height: 1.5;
+            color: #000;
+        }
+        
+        @page {
+            size: A4;
+            margin: 15mm;
+        }
+        
+        .invoice {
+            max-width: 210mm;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        
+        .header {
+            display: flex;
+            justify-content: space-between;
+            border-bottom: 3px solid #000;
+            padding-bottom: 15px;
+            margin-bottom: 20px;
+        }
+        
+        .header-right {
+            flex: 1;
+        }
+        
+        .company-name {
+            font-size: 22px;
+            font-weight: bold;
+            margin-bottom: 8px;
+        }
+        
+        .company-details p {
+            margin: 3px 0;
+            font-size: 11px;
+        }
+        
+        .invoice-title {
+            text-align: center;
+            font-size: 24px;
+            font-weight: bold;
+            margin: 20px 0;
+            padding: 10px;
+            background: #f0f0f0;
+            border: 2px solid #333;
+        }
+        
+        .info-section {
+            display: flex;
+            justify-content: space-between;
+            margin: 20px 0;
+        }
+        
+        .info-box {
+            flex: 1;
+            border: 1px solid #999;
+            padding: 12px;
+            margin: 0 5px;
+        }
+        
+        .info-box h3 {
+            font-size: 14px;
+            margin-bottom: 8px;
+            border-bottom: 1px solid #ddd;
+            padding-bottom: 5px;
+        }
+        
+        .info-box p {
+            margin: 5px 0;
+            font-size: 11px;
+        }
+        
+        .items-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 25px 0;
+        }
+        
+        .items-table th {
+            background: #333;
+            color: white;
+            padding: 10px 8px;
+            font-size: 12px;
+            border: 1px solid #333;
+            font-weight: bold;
+        }
+        
+        .items-table td {
+            padding: 8px;
+            border: 1px solid #999;
+            font-size: 11px;
+        }
+        
+        .items-table tbody tr:nth-child(odd) {
+            background: #f9f9f9;
+        }
+        
+        .totals-section {
+            float: left;
+            width: 300px;
+            margin-top: 20px;
+        }
+        
+        .total-row {
+            display: flex;
+            justify-content: space-between;
+            padding: 8px 12px;
+            border-bottom: 1px solid #ddd;
+            font-size: 12px;
+        }
+        
+        .total-row.grand-total {
+            background: #333;
+            color: white;
+            font-size: 16px;
+            font-weight: bold;
+            margin-top: 5px;
+        }
+        
+        .footer {
+            clear: both;
+            margin-top: 40px;
+            padding-top: 20px;
+            border-top: 2px solid #333;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        
+        .qr-code img {
+            width: 120px;
+            height: 120px;
+            border: 1px solid #999;
+        }
+        
+        .footer-text {
+            font-size: 10px;
+            color: #666;
+            text-align: left;
+        }
+    </style>
+</head>
+<body>
+    <div class="invoice">
+        <!-- HEADER -->
+        <div class="header">
+            <div class="header-right">
+                <div class="company-name">{{ company.name }}</div>
+                <div class="company-details">
+                    <p><strong>العنوان:</strong> {{ company.address }}</p>
+                    <p><strong>الهاتف:</strong> {{ company.phone }}</p>
+                    <p><strong>البريد الإلكتروني:</strong> {{ company.email }}</p>
+                    <p><strong>الرقم الضريبي:</strong> {{ company.tax_number }}</p>
+                </div>
+            </div>
+        </div>
+        
+        <!-- TITLE -->
+        <div class="invoice-title">فاتورة ضريبية / TAX INVOICE</div>
+        
+        <!-- INFO SECTION -->
+        <div class="info-section">
+            <div class="info-box">
+                <h3>بيانات الفاتورة</h3>
+                <p><strong>رقم الفاتورة:</strong> {{ invoice.number }}</p>
+                <p><strong>التاريخ:</strong> {{ invoice.date }}</p>
+            </div>
+            
+            <div class="info-box">
+                <h3>بيانات العميل</h3>
+                <p><strong>الاسم:</strong> {{ customer.name }}</p>
+                <p><strong>العنوان:</strong> {{ customer.address }}</p>
+                <p><strong>الرقم الضريبي:</strong> {{ customer.tax_number }}</p>
+            </div>
+        </div>
+        
+        <!-- ITEMS TABLE -->
+        <table class="items-table">
+            <thead>
+                <tr>
+                    <th style="width: 5%;">#</th>
+                    <th style="width: 40%;">الصنف / Description</th>
+                    <th style="width: 10%;">الكمية</th>
+                    <th style="width: 15%;">سعر الوحدة</th>
+                    <th style="width: 15%;">المجموع</th>
+                    <th style="width: 15%;">الضريبة</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for item in items %}
+                <tr>
+                    <td style="text-align: center;">{{ loop.index }}</td>
+                    <td>{{ item.name }}</td>
+                    <td style="text-align: center;">{{ item.quantity }}</td>
+                    <td style="text-align: left;">{{ "%.2f"|format(item.unit_price) }}</td>
+                    <td style="text-align: left;">{{ "%.2f"|format(item.line_subtotal) }}</td>
+                    <td style="text-align: left;">{{ "%.2f"|format(item.line_vat) }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        
+        <!-- TOTALS -->
+        <div class="totals-section">
+            <div class="total-row">
+                <span>المجموع قبل الضريبة:</span>
+                <span>{{ "%.2f"|format(totals.subtotal) }} ريال</span>
+            </div>
+            <div class="total-row">
+                <span>ضريبة القيمة المضافة (15%):</span>
+                <span>{{ "%.2f"|format(totals.vat) }} ريال</span>
+            </div>
+            <div class="total-row grand-total">
+                <span>الإجمالي شامل الضريبة:</span>
+                <span>{{ "%.2f"|format(totals.total) }} ريال</span>
+            </div>
+        </div>
+        
+        <!-- FOOTER -->
+        <div class="footer">
+            <div class="qr-code">
+                <img src="{{ qr_code }}" alt="QR Code">
+            </div>
+            <div class="footer-text">
+                <p>شكراً لتعاملكم معنا</p>
+                <p>للاستفسار: {{ company.email }} | {{ company.phone }}</p>
+                <p style="margin-top: 10px; font-size: 9px;">
+                    هذه الفاتورة معتمدة ولا تحتاج إلى توقيع<br>
+                    This invoice is approved and does not require signature
+                </p>
+            </div>
+        </div>
+    </div>
+</body>
+</html>
