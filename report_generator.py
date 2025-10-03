@@ -66,21 +66,13 @@ class ReportGenerator:
             for item in invoice['line_items']:
                 row = {
                     'رقم الفاتورة': invoice_number,
-                    'Invoice Number': invoice_number,
                     'تاريخ الفاتورة': formatted_date,
-                    'Invoice Date': formatted_date,
                     'اسم الصنف': item['item_name'],
-                    'Item Name': item['item_name'],
                     'سعر الوحدة (قبل الضريبة)': float(item['unit_price']),
-                    'Unit Price (Before VAT)': float(item['unit_price']),
                     'الكمية': item['quantity'],
-                    'Quantity': item['quantity'],
                     'المجموع قبل الضريبة': float(item['line_subtotal']),
-                    'Subtotal (Before VAT)': float(item['line_subtotal']),
                     'مبلغ الضريبة': float(item['vat_amount']),
-                    'VAT Amount': float(item['vat_amount']),
-                    'الإجمالي شامل الضريبة': float(item['line_total']),
-                    'Total (With VAT)': float(item['line_total'])
+                    'الإجمالي شامل الضريبة': float(item['line_total'])
                 }
                 rows.append(row)
         
@@ -130,19 +122,12 @@ class ReportGenerator:
             
             row = {
                 'رقم الفاتورة': invoice['invoice_number'],
-                'Invoice Number': invoice['invoice_number'],
                 'تاريخ الفاتورة': formatted_date,
-                'Invoice Date': formatted_date,
                 'نوع الفاتورة': invoice['invoice_type'],
-                'Invoice Type': invoice['invoice_type'],
                 'اسم العميل': invoice['customer_name'],
-                'Customer Name': invoice['customer_name'],
                 'المجموع قبل الضريبة': float(invoice['subtotal']),
-                'Subtotal (Before VAT)': float(invoice['subtotal']),
                 'مبلغ الضريبة': float(invoice['vat_amount']),
-                'VAT Amount': float(invoice['vat_amount']),
-                'الإجمالي شامل الضريبة': float(invoice['total']),
-                'Total (With VAT)': float(invoice['total'])
+                'الإجمالي شامل الضريبة': float(invoice['total'])
             }
             rows.append(row)
         
@@ -214,43 +199,7 @@ class ReportGenerator:
                 'الإجمالي الفعلي (شامل الضريبة)',
                 'الفرق'
             ],
-            'Description': [
-                'Quarter',
-                'Total Invoices',
-                'Tax Invoices',
-                'Simplified Invoices',
-                '',
-                'Target Sales (Before VAT)',
-                'Actual Sales (Before VAT)',
-                'Difference',
-                '',
-                'Target VAT',
-                'Actual VAT',
-                'Difference',
-                '',
-                'Target Total (With VAT)',
-                'Actual Total (With VAT)',
-                'Difference'
-            ],
             'القيمة': [
-                quarter_name,
-                len(invoices),
-                tax_count,
-                simplified_count,
-                '',
-                f'{float(target_sales):,.2f}',
-                f'{float(actual_sales):,.2f}',
-                f'{float(sales_diff):,.2f}',
-                '',
-                f'{float(target_vat):,.2f}',
-                f'{float(actual_vat):,.2f}',
-                f'{float(vat_diff):,.2f}',
-                '',
-                f'{float(total_target):,.2f}',
-                f'{float(total_actual):,.2f}',
-                f'{float(total_diff):,.2f}'
-            ],
-            'Value': [
                 quarter_name,
                 len(invoices),
                 tax_count,

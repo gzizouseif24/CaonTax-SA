@@ -4,7 +4,7 @@ from simulation import SalesSimulator
 from alignment import QuarterlyAligner
 from pdf_generator import PDFGenerator
 from report_generator import ReportGenerator
-from config import QUARTERLY_TARGETS
+from config import QUARTERLY_TARGETS, UNDER_SELECTIVE
 import os
 from datetime import datetime
 
@@ -98,8 +98,22 @@ os.makedirs('output/sample_invoices', exist_ok=True)
 sample_count = 5
 for quarter_name in QUARTERLY_TARGETS.keys():
     quarter_invoices = [inv for inv in all_invoices if quarter_name in inv['invoice_number'] or inv['invoice_date'].date() >= QUARTERLY_TARGETS[quarter_name]['start'] and inv['invoice_date'].date() <= QUARTERLY_TARGETS[quarter_name]['end']]
+        
+    # Filter for invoices containing UNDER_SELECTIVE items only
+    from config import UNDER_SELECTIVE
     
-    samples = quarter_invoices[:sample_count]
+    selective_invoices = []
+    for inv in quarter_invoices:
+        # Check if ANY item in this invoice is UNDER_SELECTIVE
+        has_selective = any(
+            item.get('classification') == UNDER_SELECTIVE 
+            for item in inv['line_items']
+        )
+        if has_selective:
+            selective_invoices.append(inv)
+    
+    samples = selective_invoices[:sample_count]
+    print(f"  {quarter_name}: Found {len(selective_invoices)} invoices with selective items, generating {len(samples)} samples")
     for inv in samples:
         try:
             output_path = f"output/sample_invoices/{inv['invoice_number'].replace('/', '-')}.pdf"
