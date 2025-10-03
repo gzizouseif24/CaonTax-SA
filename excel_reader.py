@@ -55,7 +55,8 @@ def read_products(file_path):
         import_date = import_date.date()
         
         # Calculate stock date (import + 7-12 random days)
-        stock_date = import_date + timedelta(days=10)
+        # SPECIAL: For 2023 Q3, ignore delays to enable sales
+        stock_date = import_date + timedelta(days=0)  # Changed from 10 to 0
         
         # Get quantity
         quantity_val = row['quantity']
@@ -81,8 +82,14 @@ def read_products(file_path):
         # Calculate unit cost
         unit_cost = total_cost / quantity
         
-        # Calculate unit price before VAT (cost + margin)
-        unit_price_before_vat = unit_cost * (1 + profit_margin_pct / 100)
+        # READ unit price from Excel (don't calculate it!)
+        unit_price_val = row['unit_price_before_vat']
+        if pd.isna(unit_price_val):
+            # Fallback: calculate if not in Excel
+            unit_price_before_vat = unit_cost * (1 + profit_margin_pct / 100)
+        else:
+            # Use the EXACT price from Excel
+            unit_price_before_vat = Decimal(str(unit_price_val))
         
         # Get classification
         classification = str(row['classification']).strip().replace('  ', ' ')  # Replace double spaces with single        

@@ -22,28 +22,53 @@ class InventoryManager:
     def get_available_items_by_classification(self, classification: str) -> List[Dict]:
         """
         Get all items with available stock for a specific classification.
+        Returns ONE record per unique item (not per batch).
         
         Args:
             classification: One of the three classification types
             
         Returns:
-            List of product dictionaries that have quantity_remaining > 0
+            List of product dictionaries (one per unique item name)
         """
         available = [
             p for p in self.products 
             if p['classification'] == classification and p['quantity_remaining'] > 0
         ]
-        return available
+        
+        # Group by item_name and return only ONE record per item
+        # Use the first available batch as the representative
+        seen_items = {}
+        unique_items = []
+        
+        for product in available:
+            item_name = product['item_name']
+            if item_name not in seen_items:
+                seen_items[item_name] = True
+                unique_items.append(product)
+        
+        return unique_items
     
     def get_all_available_items(self) -> List[Dict]:
         """
         Get all items with available stock (any classification).
+        Returns ONE record per unique item (not per batch).
         
         Returns:
-            List of product dictionaries that have quantity_remaining > 0
+            List of product dictionaries (one per unique item name)
         """
         available = [p for p in self.products if p['quantity_remaining'] > 0]
-        return available
+        
+        # Group by item_name and return only ONE record per item
+        seen_items = {}
+        unique_items = []
+        
+        for product in available:
+            item_name = product['item_name']
+            if item_name not in seen_items:
+                seen_items[item_name] = True
+                unique_items.append(product)
+        
+        return unique_items
     
     def get_available_quantity(self, item_name: str) -> int:
         """

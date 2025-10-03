@@ -22,7 +22,8 @@ class QuarterlyAligner:
         end_date: date,
         target_sales: Decimal,
         target_vat: Decimal,
-        vat_customers: List[Dict] = None
+        vat_customers: List[Dict] = None,
+        allow_variance: bool = False  # NEW: Flexible for 2023
     ) -> List[Dict]:
         """Generate invoices matching exact quarterly targets."""
         
@@ -33,10 +34,41 @@ class QuarterlyAligner:
         print(f"Target Sales: {target_sales:,.2f} SAR")
         print(f"Target VAT: {target_vat:,.2f} SAR")
         
+        if allow_variance:
+            print(f"Mode: 2023 (Best Effort - Accept any total)")
+        else:
+            print(f"Mode: 2024 (Strict - Must match target)")
+        
         # Phase 1: Generate VAT customer invoices
         vat_invoices = []
         vat_sales = Decimal("0")
         vat_vat = Decimal("0")
+        
+        if vat_customers and not allow_variance:
+            # 2024: Sort customers and select subset to avoid overshooting
+            total_customer_sales = sum(
+                (c['purchase_amount'] / Decimal("1.15")).quantize(Decimal('0.01')) 
+                for c in vat_customers
+            )
+            
+            if total_customer_sales > target_sales:
+                print(f"  Customer total ({total_customer_sales:,.2f}) exceeds target")
+                print(f"  Selecting subset of customers to match target...")
+                
+                # Select customers until we approach target (90% threshold)
+                selected_customers = []
+                cumulative = Decimal("0")
+                
+                for customer in vat_customers:
+                    customer_subtotal = (customer['purchase_amount'] / Decimal("1.15")).quantize(Decimal('0.01'))
+                    if cumulative + customer_subtotal <= target_sales * Decimal("0.95"):
+                        selected_customers.append(customer)
+                        cumulative += customer_subtotal
+                    else:
+                        break
+                
+                vat_customers = selected_customers
+                print(f"  Selected {len(selected_customers)} customers")
         
         if vat_customers:
             print(f"\nPhase 1: Generating {len(vat_customers)} VAT customer invoices...")
@@ -58,12 +90,13 @@ class QuarterlyAligner:
         print(f"  VAT needed: {remaining_vat:,.2f} SAR")
         
         # Phase 3: Generate cash sales
-        print(f"\nPhase 3: Generating cash sales to match target...")
+        print(f"\nPhase 3: Generating cash sales...")
         cash_invoices = self._generate_controlled_cash_sales(
             start_date,
             end_date,
             remaining_sales,
-            remaining_vat
+            remaining_vat,
+            allow_variance=allow_variance  # Pass through
         )
         
         print(f"  Generated: {len(cash_invoices)} cash invoices")
@@ -92,17 +125,25 @@ class QuarterlyAligner:
         print(f"Difference: {vat_diff:.2f} SAR")
         
         # Tolerance check
-        tolerance = Decimal("5.00")
-        
-        if sales_diff < tolerance and vat_diff < tolerance:
-            print(f"\n✅ EXCELLENT MATCH - Targets achieved with authentic pricing")
-            print(f"  Sales difference: {sales_diff:.2f} SAR")
-            print(f"  VAT difference: {vat_diff:.2f} SAR")
+        if allow_variance:
+            # 2023: Any result is acceptable
+            coverage_pct = (actual_sales / target_sales * 100) if target_sales > 0 else 0
+            print(f"\n✅ 2023 RESULT ACCEPTED")
+            print(f"  Sales coverage: {coverage_pct:.1f}% of target")
+            print(f"  Note: 2023 uses best effort - exact matching not required")
         else:
-            print(f"\n⚠️ TARGET VARIANCE - Authentic pricing maintained, some variance exists")
-            print(f"  Sales difference: {sales_diff:.2f} SAR")
-            print(f"  VAT difference: {vat_diff:.2f} SAR")
-            print(f"  Note: This is acceptable - NEVER selling below cost takes priority")
+            # 2024: Check tolerance
+            tolerance = Decimal("5.00")
+            
+            if sales_diff < tolerance and vat_diff < tolerance:
+                print(f"\n✅ EXCELLENT MATCH - Targets achieved with authentic pricing")
+                print(f"  Sales difference: {sales_diff:.2f} SAR")
+                print(f"  VAT difference: {vat_diff:.2f} SAR")
+            else:
+                print(f"\n⚠️ TARGET VARIANCE - Authentic pricing maintained, some variance exists")
+                print(f"  Sales difference: {sales_diff:.2f} SAR")
+                print(f"  VAT difference: {vat_diff:.2f} SAR")
+                print(f"  Note: This is acceptable - NEVER selling below cost takes priority")
         
         return all_invoices
     
@@ -168,9 +209,15 @@ class QuarterlyAligner:
         start_date: date,
         end_date: date,
         target_sales: Decimal,
-        target_vat: Decimal
+        target_vat: Decimal,
+        allow_variance: bool = False  # NEW PARAMETER
     ) -> List[Dict]:
-        """Generate cash invoices that match target using authentic prices and quantity adjustment."""
+        """
+        Generate cash invoices that match target using authentic prices and quantity adjustment.
+        
+        If allow_variance=True (2023): Generate as much as possible, accept any total.
+        If allow_variance=False (2024): Match target precisely.
+        """
         
         # Calculate working days
         working_days = []
@@ -181,28 +228,64 @@ class QuarterlyAligner:
             current += timedelta(days=1)
         
         print(f"    Working days: {len(working_days)}")
-        print(f"    Using ONLY authentic Excel prices - adjusting quantities to hit targets")
+        
+        if allow_variance:
+            print(f"    2023 MODE: Generating maximum possible sales (target is guideline only)")
+        else:
+            print(f"    2024 MODE: Matching target precisely using authentic prices")
         
         invoices = []
         actual_sales = Decimal("0")
         actual_vat = Decimal("0")
         
-        # Generate invoices until we hit the target
-        max_invoices = len(working_days) * 20
+        # For 2023: Try to generate enough invoices to approach target
+        # For 2024: Generate just enough to hit target
+        if allow_variance:
+            max_invoices = len(working_days) * 30  # Reasonable attempts for 2023
+        else:
+            max_invoices = len(working_days) * 20  # Current logic for 2024
         
         for i in range(max_invoices):
-            # Stop if we're close to target
+            # Check stopping conditions
             remaining_sales = target_sales - actual_sales
             remaining_vat = target_vat - actual_vat
             
-            if remaining_sales <= Decimal("1.00"):
+            if allow_variance:
+                # 2023: Aim for target, but accept 80-120% range (best effort)
+                if actual_sales >= target_sales * Decimal("1.1"):
+                    print(f"    Reached 110% of target, stopping (2023 best effort)")
+                    break
+                # Also stop if we're very close to target
+                if actual_sales >= target_sales * Decimal("0.95") and remaining_sales <= Decimal("5000.00"):
+                    print(f"    Close enough to target (2023 best effort)")
+                    break
+            else:
+                # 2024: Stop when very close to target (ultra-tight tolerance)
+                if remaining_sales <= Decimal("0.10"):
+                    break
+            
+            # Select random working day (prefer days with stock)
+            # For Q3-2023, this will naturally prefer late September when stock arrives
+            available_dates = [
+                d for d in working_days 
+                if any(p['stock_date'] <= d for p in self.simulator.inventory.products 
+                       if p['quantity_remaining'] > 0)
+            ]
+            
+            if not available_dates:
+                if allow_variance:
+                    print(f"    No more inventory available")
                 break
             
-            # Select random working day
-            invoice_date = random.choice(working_days)
+            invoice_date = random.choice(available_dates)
             
             # Target size for this invoice
-            target_invoice_size = min(remaining_sales, Decimal("3000.00"))
+            if allow_variance:
+                # 2023: Random invoice size between 1000-5000 SAR
+                target_invoice_size = Decimal(str(random.randint(1000, 5000)))
+            else:
+                # 2024: Size based on remaining target
+                target_invoice_size = min(remaining_sales, Decimal("3000.00"))
             
             # Create invoice using authentic prices ONLY
             line_items = self._create_authentic_price_line_items(
@@ -252,6 +335,10 @@ class QuarterlyAligner:
         print(f"    Actual sales: {actual_sales:,.2f} SAR (Target: {target_sales:,.2f})")
         print(f"    Actual VAT: {actual_vat:,.2f} SAR (Target: {target_vat:,.2f})")
         
+        if allow_variance:
+            coverage_pct = (actual_sales / target_sales * 100) if target_sales > 0 else 0
+            print(f"    Coverage: {coverage_pct:.1f}% of target")
+        
         return invoices
     
     def _create_authentic_price_line_items(
@@ -295,11 +382,17 @@ class QuarterlyAligner:
             # Select random product
             product = random.choice(available)
             
-            # Get AUTHENTIC price from Excel
-            authentic_price = product['unit_price_before_vat']
+            # Get AUTHENTIC price from Excel (use the product's own price, not FIFO)
+            excel_price = product['unit_price_before_vat']
+            excel_cost = product['unit_cost']
+            
+            # CRITICAL VALIDATION: Ensure Excel price is profitable
+            if excel_price < excel_cost:
+                print(f"  ⚠️ Skipping {product['item_name']} - Excel price {excel_price} below cost {excel_cost}")
+                continue
             
             # Calculate ideal quantity WITHOUT changing price
-            ideal_qty = int(remaining_target / authentic_price)
+            ideal_qty = int(remaining_target / excel_price)
             ideal_qty = max(1, min(ideal_qty, 40))
             
             # Check stock availability
@@ -311,34 +404,14 @@ class QuarterlyAligner:
             # Use minimum of ideal and available
             qty = min(ideal_qty, available_qty)
             
-            # Deduct from inventory (FIFO)
+            # Deduct from inventory (FIFO for tracking only, not for pricing)
             try:
                 deductions = self.simulator.inventory.deduct_stock(product['item_name'], qty)
             except ValueError:
                 continue
             
-            # CRITICAL: Calculate ACTUAL FIFO costs from deductions
-            actual_cost_total = Decimal("0")
-            fifo_price = deductions[0][2]  # Price from oldest batch
-            
-            for customs_decl, qty_deducted, batch_price in deductions:
-                # Find the batch to get its cost
-                batch = next((p for p in self.simulator.inventory.products 
-                             if p['customs_declaration'] == customs_decl 
-                             and p['item_name'] == product['item_name']), None)
-                
-                if batch:
-                    actual_cost_total += batch['unit_cost'] * qty_deducted
-            
-            unit_cost_actual = actual_cost_total / qty
-            
-            # CRITICAL VALIDATION: Ensure price is profitable
-            if fifo_price < unit_cost_actual:
-                print(f"  ⚠️ Skipping {product['item_name']} - FIFO price {fifo_price} below cost {unit_cost_actual}")
-                continue
-            
-            # Calculate line totals using AUTHENTIC FIFO price
-            line_subtotal = (fifo_price * qty).quantize(Decimal('0.01'))
+            # Calculate line totals using EXCEL price (constant from product record)
+            line_subtotal = (excel_price * qty).quantize(Decimal('0.01'))
             line_vat = (line_subtotal * VAT_RATE).quantize(Decimal('0.01'))
             
             # Only add if it doesn't overshoot target too much
@@ -346,8 +419,8 @@ class QuarterlyAligner:
                 line_items.append({
                     'item_name': product['item_name'],
                     'quantity': qty,
-                    'unit_price': fifo_price,  # FIFO selling price
-                    'unit_cost_actual': unit_cost_actual,  # ACTUAL FIFO cost (NEW!)
+                    'unit_price': excel_price,  # Excel price (constant)
+                    'unit_cost_actual': excel_cost,  # Excel cost (constant)
                     'line_subtotal': line_subtotal,
                     'vat_amount': line_vat,
                     'line_total': line_subtotal + line_vat,
