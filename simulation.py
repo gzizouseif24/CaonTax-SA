@@ -114,10 +114,11 @@ class SalesSimulator:
             # TAX invoices: Only UNDER_NON_SELECTIVE
             available = self.inventory.get_available_items_by_classification(UNDER_NON_SELECTIVE)
         else:
-            # SIMPLIFIED invoices: Can mix UNDER_NON_SELECTIVE + UNDER_SELECTIVE
+            # SIMPLIFIED invoices: ALL classifications
             non_selective = self.inventory.get_available_items_by_classification(UNDER_NON_SELECTIVE)
             selective = self.inventory.get_available_items_by_classification(UNDER_SELECTIVE)
-            available = non_selective + selective
+            outside = self.inventory.get_available_items_by_classification(OUTSIDE_INSPECTION)
+            available = non_selective + selective + outside
             
             # Weight towards selective items (70% selective, 30% non-selective)
             if selective and non_selective:

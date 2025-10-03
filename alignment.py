@@ -270,10 +270,11 @@ class QuarterlyAligner:
             # Only non-selective for VAT customers
             available = self.simulator.inventory.get_available_items_by_classification(UNDER_NON_SELECTIVE)
         else:
-            # Mix for cash customers
+            # Cash customers can buy ALL classifications (including OUTSIDE_INSPECTION)
             available = (
                 self.simulator.inventory.get_available_items_by_classification(UNDER_NON_SELECTIVE) +
-                self.simulator.inventory.get_available_items_by_classification(UNDER_SELECTIVE)
+                self.simulator.inventory.get_available_items_by_classification(UNDER_SELECTIVE) +
+                self.simulator.inventory.get_available_items_by_classification(OUTSIDE_INSPECTION)
             )
         
         # Filter by stock date

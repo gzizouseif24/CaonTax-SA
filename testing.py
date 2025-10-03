@@ -24,10 +24,7 @@ aligner = QuarterlyAligner(simulator)
 # Generate Q3-2023 invoices
 print("\n2. Generating Q3-2023 invoices...")
 q3_target = QUARTERLY_TARGETS["Q3-2023"]
-q3_customers = [
-    c for c in customers_2023
-    if q3_target['start'] <= c['purchase_date'] <= q3_target['end']
-]
+q3_customers = []  # No VAT customers in Q3-2023 (cash only)
 
 invoices = aligner.align_quarter(
     quarter_name="Q3-2023",

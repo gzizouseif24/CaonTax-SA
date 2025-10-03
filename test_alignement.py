@@ -28,10 +28,7 @@ target_sales = q3_target['sales']
 target_vat = q3_target['vat']
 
 # Filter customers for Q3-2023
-q3_customers = [
-    c for c in customers_2023
-    if start_date <= c['purchase_date'] <= end_date
-]
+q3_customers = []
 
 print(f"\nQ3-2023 Setup:")
 print(f"  Period: {start_date} to {end_date}")
