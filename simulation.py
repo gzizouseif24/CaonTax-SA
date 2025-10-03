@@ -105,8 +105,8 @@ class SalesSimulator:
                 # Try different quantities until we find one that works
                 for qty in [40, 30, 20, 10, 5, 3]:
                     if self.inventory.check_stock_available(item['item_name'], qty):
-                        adjusted_price = item['unit_price_before_vat'] * Decimal(str(adjustment_factor))
-                        basket.append((item, qty, adjusted_price))
+                        authentic_price = item['unit_price_before_vat']  # NO ADJUSTMENTS - AUTHENTIC PRICE
+                        basket.append((item, qty, authentic_price))
                         return basket
         
         # Regular basket (not OUTSIDE_INSPECTION)
@@ -149,8 +149,8 @@ class SalesSimulator:
             # Try different quantities (start high, go lower if needed)
             for qty in [40, 30, 20, 15, 10, 5, 3]:
                 if self.inventory.check_stock_available(item['item_name'], qty):
-                    adjusted_price = item['unit_price_before_vat'] * Decimal(str(adjustment_factor))
-                    basket.append((item, qty, adjusted_price))
+                    authentic_price = item['unit_price_before_vat']  # NO ADJUSTMENTS - AUTHENTIC PRICE
+                    basket.append((item, qty, authentic_price))
                     break
         
         return basket

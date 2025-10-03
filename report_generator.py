@@ -25,6 +25,22 @@ class ReportGenerator:
         self.output_dir = output_dir
         os.makedirs(output_dir, exist_ok=True)
     
+    def _save_excel_with_error_handling(self, df: pd.DataFrame, filename: str) -> str:
+        """Save DataFrame to Excel with error handling for file locks."""
+        output_path = os.path.join(self.output_dir, filename)
+        try:
+            df.to_excel(output_path, index=False, engine='openpyxl')
+            return output_path
+        except PermissionError:
+            print(f"⚠️  Cannot write to {output_path} - file may be open in Excel")
+            print(f"   Please close Excel and try again")
+            # Try alternative filename
+            alt_filename = filename.replace('.xlsx', f'_new.xlsx')
+            alt_path = os.path.join(self.output_dir, alt_filename)
+            df.to_excel(alt_path, index=False, engine='openpyxl')
+            print(f"   Saved as alternative: {alt_path}")
+            return alt_path
+    
     def generate_detailed_sales_report(
         self,
         invoices: List[Dict],
@@ -80,8 +96,7 @@ class ReportGenerator:
         df = pd.DataFrame(rows)
         
         # Save to Excel
-        output_path = os.path.join(self.output_dir, output_filename)
-        df.to_excel(output_path, index=False, engine='openpyxl')
+        output_path = self._save_excel_with_error_handling(df, output_filename)
         
         print(f"✓ Detailed sales report: {output_path}")
         print(f"  Total line items: {len(rows)}")
@@ -135,8 +150,7 @@ class ReportGenerator:
         df = pd.DataFrame(rows)
         
         # Save to Excel
-        output_path = os.path.join(self.output_dir, output_filename)
-        df.to_excel(output_path, index=False, engine='openpyxl')
+        output_path = self._save_excel_with_error_handling(df, output_filename)
         
         print(f"✓ Invoice summary report: {output_path}")
         print(f"  Total invoices: {len(rows)}")
@@ -223,8 +237,7 @@ class ReportGenerator:
         df = pd.DataFrame(data)
         
         # Save to Excel
-        output_path = os.path.join(self.output_dir, output_filename)
-        df.to_excel(output_path, index=False, engine='openpyxl')
+        output_path = self._save_excel_with_error_handling(df, output_filename)
         
         print(f"✓ Quarterly summary report: {output_path}")
         print(f"  Quarter: {quarter_name}")

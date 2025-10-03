@@ -158,6 +158,18 @@ print(f"Total Sales (before VAT): {total_sales:,.2f} SAR")
 print(f"Total VAT: {total_vat:,.2f} SAR")
 print(f"Total Revenue: {total_sales + total_vat:,.2f} SAR")
 
+# Validate prices match product sheet
+print(f"\n{'='*60}")
+print("PRICE VALIDATION - CHECKING AUTHENTIC PRICING")
+print(f"{'='*60}")
+price_validation_passed = aligner.validate_invoice_prices(all_invoices)
+
+if price_validation_passed:
+    print("🎉 ALL INVOICE PRICES MATCH PRODUCT SHEET EXACTLY!")
+    print("   Authentic pricing system working perfectly!")
+else:
+    print("⚠️  Some price mismatches found - check validation details above")
+
 print(f"\n{'='*60}")
 print("QUARTERLY BREAKDOWN")
 print(f"{'='*60}")
