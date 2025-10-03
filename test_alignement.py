@@ -12,7 +12,7 @@ print("="*60)
 # Load data
 print("\nLoading data...")
 products = read_products('input/products.xlsx')
-customers_2023 = read_customers('input/customers_2023_fabricated.xlsx')
+# NOTE: Not loading customers file since 2023 has no VAT customers
 holidays = read_holidays('input/holidays.xlsx')
 
 # Initialize
@@ -27,12 +27,12 @@ end_date = q3_target['end']
 target_sales = q3_target['sales']
 target_vat = q3_target['vat']
 
-# Filter customers for Q3-2023
+# Q3-2023: NO VAT customers (all cash sales)
 q3_customers = []
 
 print(f"\nQ3-2023 Setup:")
 print(f"  Period: {start_date} to {end_date}")
-print(f"  VAT Customers: {len(q3_customers)}")
+print(f"  VAT Customers: {len(q3_customers)} (2023 = cash only)")
 print(f"  Target Sales: {target_sales:,.2f} SAR")
 print(f"  Target VAT: {target_vat:,.2f} SAR")
 
@@ -43,7 +43,7 @@ invoices = aligner.align_quarter(
     end_date=end_date,
     target_sales=target_sales,
     target_vat=target_vat,
-    vat_customers=q3_customers
+    vat_customers=q3_customers  # Empty list
 )
 
 # Verify results
@@ -56,6 +56,8 @@ actual_vat = sum(inv['vat_amount'] for inv in invoices)
 actual_total = sum(inv['total'] for inv in invoices)
 
 print(f"\nInvoices generated: {len(invoices)}")
+print(f"  All should be SIMPLIFIED (cash): {all(inv['invoice_type'] == 'SIMPLIFIED' for inv in invoices)}")
+
 print(f"\nSales before VAT:")
 print(f"  Target: {target_sales:,.2f} SAR")
 print(f"  Actual: {actual_sales:,.2f} SAR")
@@ -79,6 +81,26 @@ for inv in invoices[:5]:
     print(f"\n{inv['invoice_number']} ({inv['invoice_type']}):")
     print(f"  Customer: {inv['customer_name']}")
     print(f"  Items: {len(inv['line_items'])}")
+    
+    # Show classifications of items
+    classifications = [item['classification'] for item in inv['line_items']]
+    print(f"  Classifications: {set(classifications)}")
+    
     print(f"  Subtotal: {inv['subtotal']:,.2f} SAR")
     print(f"  VAT: {inv['vat_amount']:,.2f} SAR")
     print(f"  Total: {inv['total']:,.2f} SAR")
+
+# Check inventory usage by classification
+print("\n" + "="*60)
+print("CLASSIFICATION USAGE")
+print("="*60)
+
+from collections import defaultdict
+classification_counts = defaultdict(int)
+for inv in invoices:
+    for item in inv['line_items']:
+        classification_counts[item['classification']] += 1
+
+print("\nItems sold by classification:")
+for classification, count in classification_counts.items():
+    print(f"  {classification}: {count} items")

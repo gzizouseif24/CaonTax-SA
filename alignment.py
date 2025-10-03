@@ -334,7 +334,8 @@ class QuarterlyAligner:
                 'unit_price': unit_price,
                 'line_subtotal': line_subtotal,
                 'vat_amount': line_vat,
-                'line_total': line_subtotal + line_vat
+                'line_total': line_subtotal + line_vat,
+                'classification': product['classification']
             })
             
             remaining -= line_subtotal

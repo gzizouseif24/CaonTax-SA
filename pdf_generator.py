@@ -179,11 +179,7 @@ class PDFGenerator:
         }
         
         # Add page size based on invoice type
-        if invoice['invoice_type'] == 'TAX':
-            options['page-size'] = 'A4'
-        else:
-            options['page-width'] = '80mm'
-            options['page-height'] = '297mm'  # Let it grow with content
+        options['page-size'] = 'A4'
         
         # Generate PDF
         pdfkit.from_string(

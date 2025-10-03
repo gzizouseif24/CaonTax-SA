@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>فاتورة {{ invoice.number }}</title>
+    <title>فاتورة ضريبية مبسطة {{ invoice.number }}</title>
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Tajawal:wght@400;700&display=swap');
         
@@ -16,198 +16,189 @@
         body {
             font-family: 'Tajawal', Arial, sans-serif;
             direction: rtl;
-            text-align: right;
-            font-size: 14px;
-            line-height: 1.6;
-            color: #333;
+            text-align: center;
+            font-size: 12px;
+            line-height: 1.5;
+            color: #000;
         }
         
         @page {
-            size: 80mm auto;
-            margin: 5mm;
+            size: A4;
+            margin: 15mm;
         }
         
         .invoice {
-            max-width: 80mm;
+            max-width: 210mm;
             margin: 0 auto;
-            padding: 10px;
+            padding: 20px;
         }
         
-        .header {
+        .invoice-title {
             text-align: center;
-            border-bottom: 2px solid #000;
-            padding-bottom: 10px;
-            margin-bottom: 10px;
+            font-size: 24px;
+            font-weight: bold;
+            margin: 20px 0;
+            padding: 10px;
+            background: #f0f0f0;
+            border: 2px solid #333;
         }
         
-        .company-name {
+        .company-info {
+            text-align: center;
+            margin: 20px 0;
+            font-size: 14px;
+        }
+        
+        .company-info p {
+            margin: 5px 0;
+        }
+        
+        .qr-section {
+            text-align: center;
+            margin: 20px 0;
+        }
+        
+        .qr-section img {
+            width: 120px;
+            height: 120px;
+            border: 1px solid #999;
+        }
+        
+        .invoice-number {
+            text-align: center;
             font-size: 18px;
             font-weight: bold;
-            margin-bottom: 5px;
-        }
-        
-        .company-details {
-            font-size: 12px;
-            color: #666;
-        }
-        
-        .company-details p {
-            margin: 2px 0;
-        }
-        
-        .invoice-info {
-            margin: 15px 0;
-            font-size: 12px;
-        }
-        
-        .invoice-info p {
-            margin: 3px 0;
-        }
-        
-        .customer-info {
-            background: #f5f5f5;
-            padding: 8px;
             margin: 10px 0;
-            border-radius: 3px;
-            font-size: 13px;
+        }
+        
+        .invoice-date {
+            text-align: center;
+            font-size: 14px;
+            margin: 10px 0;
+            color: #666;
         }
         
         .items-table {
             width: 100%;
             border-collapse: collapse;
-            margin: 15px 0;
+            margin: 25px 0;
+            text-align: right;
         }
         
         .items-table th {
             background: #333;
             color: white;
-            padding: 8px 5px;
+            padding: 10px 8px;
             font-size: 12px;
             border: 1px solid #333;
+            font-weight: bold;
         }
         
         .items-table td {
-            padding: 6px 5px;
-            border: 1px solid #ddd;
-            font-size: 12px;
+            padding: 8px;
+            border: 1px solid #999;
+            font-size: 11px;
         }
         
-        .items-table tr:nth-child(even) {
+        .items-table tbody tr:nth-child(odd) {
             background: #f9f9f9;
         }
         
-        .totals {
-            margin-top: 15px;
-            border-top: 2px solid #333;
-            padding-top: 10px;
+        .totals-section {
+            margin: 30px auto;
+            width: 400px;
         }
         
         .total-row {
             display: flex;
             justify-content: space-between;
-            padding: 5px 0;
+            padding: 8px 12px;
+            border-bottom: 1px solid #ddd;
             font-size: 13px;
+            text-align: right;
+        }
+        
+        .total-row.discount {
+            color: #666;
+            font-style: italic;
         }
         
         .total-row.grand-total {
+            background: #333;
+            color: white;
             font-size: 16px;
             font-weight: bold;
-            border-top: 2px solid #333;
-            padding-top: 8px;
-            margin-top: 8px;
-        }
-        
-        .qr-code {
-            text-align: center;
-            margin: 20px 0;
-        }
-        
-        .qr-code img {
-            width: 100px;
-            height: 100px;
-        }
-        
-        .footer {
-            text-align: center;
-            font-size: 11px;
-            color: #666;
-            margin-top: 15px;
-            border-top: 1px dashed #999;
-            padding-top: 10px;
+            margin-top: 5px;
         }
     </style>
 </head>
 <body>
     <div class="invoice">
-        <!-- HEADER -->
-        <div class="header">
-            <div class="company-name">{{ company.name }}</div>
-            <div class="company-details">
-                <p>{{ company.address }}</p>
-                <p>هاتف: {{ company.phone }}</p>
-                <p>الرقم الضريبي: {{ company.tax_number }}</p>
-            </div>
+        <!-- TITLE (CENTERED) -->
+        <div class="invoice-title">
+            فاتورة ضريبية مبسطة<br>
+            Simplified Tax Invoice
         </div>
         
-        <!-- INVOICE INFO -->
-        <div class="invoice-info">
-            <p><strong>رقم الفاتورة:</strong> {{ invoice.number }}</p>
-            <p><strong>التاريخ:</strong> {{ invoice.date }}</p>
-            <p><strong>نوع الفاتورة:</strong> فاتورة مبسطة</p>
+        <!-- COMPANY INFO (CENTERED) -->
+        <div class="company-info">
+            <p style="font-size: 16px; font-weight: bold;">{{ company.name }}</p>
+            <p>{{ company.address }}</p>
+            <p>هاتف: {{ company.phone }}</p>
+            <p>VAT {{ company.tax_number }}</p>
         </div>
         
-        <!-- CUSTOMER INFO -->
-        <div class="customer-info">
-            <p><strong>العميل:</strong> {{ customer.name }}</p>
+        <!-- QR CODE (CENTERED) -->
+        <div class="qr-section">
+            <img src="{{ qr_code }}" alt="QR Code">
         </div>
         
-        <!-- ITEMS TABLE -->
+        <!-- INVOICE NUMBER (CENTERED, NO LABEL) -->
+        <div class="invoice-number">{{ invoice.number }}</div>
+        
+        <!-- INVOICE DATE (CENTERED) -->
+        <div class="invoice-date">{{ invoice.date }}</div>
+        
+        <!-- ITEMS TABLE (RTL) -->
         <table class="items-table">
             <thead>
                 <tr>
-                    <th>الصنف</th>
-                    <th>الكمية</th>
-                    <th>السعر</th>
-                    <th>المجموع</th>
+                    <th style="width: 40%;">الصنف</th>
+                    <th style="width: 20%;">سعر الوحدة</th>
+                    <th style="width: 20%;">الكمية</th>
+                    <th style="width: 20%;">المجموع</th>
                 </tr>
             </thead>
             <tbody>
                 {% for item in items %}
                 <tr>
                     <td>{{ item.name }}</td>
-                    <td>{{ item.quantity }}</td>
-                    <td>{{ "%.2f"|format(item.unit_price) }}</td>
-                    <td>{{ "%.2f"|format(item.total) }}</td>
+                    <td style="text-align: left;">{{ "%.2f"|format(item.unit_price) }}</td>
+                    <td style="text-align: center;">{{ item.quantity }}</td>
+                    <td style="text-align: left;">{{ "%.2f"|format(item.line_subtotal) }}</td>
                 </tr>
                 {% endfor %}
             </tbody>
         </table>
         
-        <!-- TOTALS -->
-        <div class="totals">
+        <!-- TOTALS (CENTERED) -->
+        <div class="totals-section">
             <div class="total-row">
-                <span>المجموع قبل الضريبة:</span>
-                <span>{{ "%.2f"|format(totals.subtotal) }} ريال</span>
+                <span>الاجمالي غير شامل ضريبة القيمة المضافة</span>
+                <span>{{ "%.2f"|format(totals.subtotal) }}</span>
+            </div>
+            <div class="total-row discount">
+                <span>الخصم</span>
+                <span>0.00</span>
             </div>
             <div class="total-row">
-                <span>ضريبة القيمة المضافة (15%):</span>
-                <span>{{ "%.2f"|format(totals.vat) }} ريال</span>
+                <span>ضريبة القيمة المضافة 15%</span>
+                <span>{{ "%.2f"|format(totals.vat) }}</span>
             </div>
             <div class="total-row grand-total">
-                <span>الإجمالي شامل الضريبة:</span>
-                <span>{{ "%.2f"|format(totals.total) }} ريال</span>
+                <span>الاجمالي شامل ضريبة القيمة المضافة</span>
+                <span>{{ "%.2f"|format(totals.total) }}</span>
             </div>
-        </div>
-        
-        <!-- QR CODE -->
-        <div class="qr-code">
-            <img src="{{ qr_code }}" alt="QR Code">
-        </div>
-        
-        <!-- FOOTER -->
-        <div class="footer">
-            <p>شكراً لتعاملكم معنا</p>
-            <p>{{ company.email }}</p>
         </div>
     </div>
 </body>
