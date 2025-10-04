@@ -7,37 +7,42 @@ from config import MIN_STOCK_DELAY, MAX_STOCK_DELAY
 
 def read_products(file_path):
     """
-    Read products Excel file with ENGLISH column names.
+    Read products Excel file with PRD-compliant column names.
+    Creates lot_id for each row as: customs_declaration_no:item_description
     """
     print(f"Reading products from {file_path}...")
-    
+
     df = pd.read_excel(file_path)
-    
+
     # Remove any unnamed columns
     df = df.loc[:, ~df.columns.str.contains('^Unnamed')]
-    
+
     # Strip whitespace from column names (fix trailing spaces)
     df.columns = df.columns.str.strip()
-    
+
     # Print columns to verify
     print(f"Found columns: {list(df.columns)}")
-    
+
     products = []
-    
+
     for idx, row in df.iterrows():
-        # Skip empty rows
-        if pd.isna(row['item_name']):
+        # Skip empty rows - using PRD column name
+        if pd.isna(row['item_description']):
             continue
-            
-        # Extract values
-        item_name = str(row['item_name']).strip()
-        
+
+        # Extract values using PRD column names
+        item_description = str(row['item_description']).strip()
+        customs_declaration_no = str(row['customs_declaration_no']).strip()
+
+        # Create lot_id as per PRD: customs_declaration_no:item_description
+        lot_id = f"{customs_declaration_no}:{item_description}"
+
         # Handle import date
         import_date = row['import_date']
         if pd.isna(import_date):
             print(f"  Warning: Skipping row {idx} - no import date")
             continue
-            
+
         if isinstance(import_date, (int, float)):
             # Excel date serial
             import_date = datetime(1899, 12, 30) + timedelta(days=int(import_date))
@@ -51,93 +56,109 @@ def read_products(file_path):
                 except:
                     print(f"  Warning: Could not parse date '{import_date}' at row {idx}")
                     continue
-        
+
         import_date = import_date.date()
-        
-        # Calculate stock date (import + 7-12 random days)
-        # SPECIAL: For 2023 Q3, ignore delays to enable sales
-        stock_date = import_date + timedelta(days=0)  # Changed from 10 to 0
-        
-        # Get quantity
-        quantity_val = row['quantity']
+
+        # Stock date: No delay for Q3-2023 (September imports available immediately)
+        # For other quarters, could add delay, but keeping 0 for now
+        stock_date = import_date + timedelta(days=0)
+
+        # Get quantity - using PRD column name
+        quantity_val = row['qty_imported']
         if pd.isna(quantity_val):
             print(f"  Warning: Skipping row {idx} - no quantity")
             continue
         quantity = int(quantity_val)
-        
-        # Get total cost
-        total_cost_val = row['total_cost']
+
+        # Get total cost - using PRD column name
+        total_cost_val = row['landed_cost_total']
         if pd.isna(total_cost_val):
             print(f"  Warning: Skipping row {idx} - no total cost")
             continue
         total_cost = Decimal(str(total_cost_val))
-        
-        # Get profit margin
-        profit_margin_val = row['profit_margin_pct']
+
+        # Get profit margin - using PRD column name
+        profit_margin_val = row['margin_pct']
         if pd.isna(profit_margin_val):
             profit_margin_pct = Decimal("15")  # Default 15%
         else:
             profit_margin_pct = Decimal(str(profit_margin_val))
-        
-        # Calculate unit cost
-        unit_cost = total_cost / quantity
-        
-        # READ unit price from Excel (don't calculate it!)
-        unit_price_val = row['unit_price_before_vat']
+
+        # Calculate unit cost - using PRD column name
+        unit_cost_ex_vat = total_cost / quantity
+
+        # READ unit price from Excel (don't calculate it!) - using PRD column name
+        unit_price_val = row['unit_price_ex_vat']
         if pd.isna(unit_price_val):
             # Fallback: calculate if not in Excel
-            unit_price_before_vat = unit_cost * (1 + profit_margin_pct / 100)
+            unit_price_ex_vat = unit_cost_ex_vat * (1 + profit_margin_pct / 100)
         else:
             # Use the EXACT price from Excel
-            unit_price_before_vat = Decimal(str(unit_price_val))
-        
-        # Get classification
-        classification = str(row['classification']).strip().replace('  ', ' ')  # Replace double spaces with single        
+            unit_price_ex_vat = Decimal(str(unit_price_val))
+
+        # Get classification - using PRD column name
+        shipment_class = str(row['shipment_class']).strip().replace('  ', ' ')
+
+        # Build product dictionary with PRD-compliant fields
         product = {
-            'item_name': item_name,
-            'customs_declaration': str(row['customs_declaration']),
-            'classification': classification,
+            # PRD fields
+            'lot_id': lot_id,
+            'item_description': item_description,
+            'customs_declaration_no': customs_declaration_no,
+            'shipment_class': shipment_class,
             'import_date': import_date,
             'stock_date': stock_date,
+            'qty_imported': quantity,
+            'qty_remaining': quantity,
+            'unit_cost_ex_vat': unit_cost_ex_vat,
+            'unit_price_ex_vat': unit_price_ex_vat,
+            'margin_pct': profit_margin_pct,
+
+            # Legacy field names for backward compatibility (will remove later)
+            'item_name': item_description,
+            'customs_declaration': customs_declaration_no,
+            'classification': shipment_class,
             'quantity_imported': quantity,
             'quantity_remaining': quantity,
-            'unit_cost': unit_cost,
-            'unit_price_before_vat': unit_price_before_vat,
+            'unit_cost': unit_cost_ex_vat,
+            'unit_price_before_vat': unit_price_ex_vat,
             'profit_margin_pct': profit_margin_pct
         }
-        
+
         products.append(product)
-    
-    print(f"✓ Loaded {len(products)} products")
+
+    print(f"✓ Loaded {len(products)} product lots")
+    print(f"  Unique lot_ids: {len(set(p['lot_id'] for p in products))}")
+    print(f"  Unique items: {len(set(p['item_description'] for p in products))}")
     return products
 
 
 def read_customers(file_path):
     """
-    Read VAT customers Excel file with ENGLISH column names.
+    Read B2B customers Excel file with PRD-compliant column names.
     """
     print(f"Reading customers from {file_path}...")
-    
+
     df = pd.read_excel(file_path)
-    
+
     # Remove unnamed columns and strip whitespace from column names
     df = df.loc[:, ~df.columns.str.contains('^Unnamed')]
     df.columns = df.columns.str.strip()
-    
+
     print(f"Found columns: {list(df.columns)}")
-    
+
     customers = []
-    
+
     for idx, row in df.iterrows():
-        # Skip empty rows
-        if pd.isna(row['customer_name']):
+        # Skip empty rows - using PRD column name
+        if pd.isna(row['client_name']):
             continue
-            
+
         # Parse purchase date
         purchase_date = row['purchase_date']
         if pd.isna(purchase_date):
             continue
-            
+
         if isinstance(purchase_date, str):
             try:
                 purchase_date = datetime.strptime(purchase_date, '%d/%m/%Y').date()
@@ -147,25 +168,31 @@ def read_customers(file_path):
             purchase_date = (datetime(1899, 12, 30) + timedelta(days=int(purchase_date))).date()
         else:
             purchase_date = purchase_date.date()
-        
-        # Handle both 'tax_number' and 'tax_id' column names
-        tax_number_col = 'tax_number' if 'tax_number' in df.columns else 'tax_id'
-        
-        # Handle both 'address' and 'adress' (typo)
-        address_col = 'address' if 'address' in df.columns else 'adress'
-        
+
+        # Get amount_inc_vat (PRD column name)
+        amount_inc_vat = Decimal(str(row['amount_inc_vat']))
+
+        # Build customer dictionary with PRD-compliant fields
         customer = {
-            'customer_name': str(row['customer_name']).strip(),
-            'tax_number': str(row[tax_number_col]).strip(),
-            'commercial_registration': str(row.get('commercial_registration', '')).strip(),
-            'address': str(row.get(address_col, '')).strip(),
-            'purchase_amount': Decimal(str(row['purchase_amount'])),
-            'purchase_date': purchase_date
+            # PRD fields
+            'client_name': str(row['client_name']).strip(),
+            'vat_number': str(row['vat_number']).strip(),
+            'address_line': str(row.get('address_line', '')).strip(),
+            'amount_inc_vat': amount_inc_vat,
+            'purchase_date': purchase_date,
+
+            # Legacy field names for backward compatibility
+            'customer_name': str(row['client_name']).strip(),
+            'tax_number': str(row['vat_number']).strip(),
+            'tax_id': str(row['vat_number']).strip(),  # Alternative name
+            'address': str(row.get('address_line', '')).strip(),
+            'adress': str(row.get('address_line', '')).strip(),  # Typo variant
+            'purchase_amount': amount_inc_vat
         }
-        
+
         customers.append(customer)
-    
-    print(f"✓ Loaded {len(customers)} VAT customers")
+
+    print(f"✓ Loaded {len(customers)} B2B customers")
     return customers
 
 
