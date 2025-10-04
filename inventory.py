@@ -209,6 +209,26 @@ class InventoryManager:
             'customs_declaration_no': lot['customs_declaration_no'],
             'item_description': lot['item_description']
         }
+    
+    def return_stock(self, lot_id: str, quantity: int) -> None:
+        """
+        Return quantity to a SPECIFIC lot (reverse of deduct_stock).
+        Used when adjusting invoice line items.
+
+        Args:
+            lot_id: The lot identifier
+            quantity: Quantity to return
+
+        Raises:
+            ValueError: If lot not found
+        """
+        lot = self.lot_index.get(lot_id)
+
+        if not lot:
+            raise ValueError(f"Lot not found: {lot_id}")
+
+        # Return the quantity
+        lot['qty_remaining'] += quantity
 
     def deduct_stock_fifo(self, item_description: str, quantity: int) -> List[Dict]:
         """

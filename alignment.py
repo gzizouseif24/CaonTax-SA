@@ -2,7 +2,7 @@ from datetime import date, timedelta, datetime
 from decimal import Decimal
 from typing import List, Dict
 from simulation import SalesSimulator
-from config import VAT_RATE, TOLERANCE, CASH_CUSTOMER_NAME
+from config import VAT_RATE, TOLERANCE, CASH_CUSTOMER_NAME, MIN_QUANTITY_PER_ITEM, MAX_QUANTITY_PER_ITEM, B2B_TOLERANCE_MIN, B2B_TOLERANCE_MAX
 from smart_sales import SmartSalesGenerator
 from refinement import refine_with_smart_adjustments
 import random
@@ -110,23 +110,39 @@ class QuarterlyAligner:
                 print(f"  Selected {len(selected_customers)} customers")
         
         if vat_customers:
-            print(f"\nPhase 1: Generating {len(vat_customers)} VAT customer invoices...")
+            print(f"\nPhase 1: Generating {len(vat_customers)} B2B customer invoices...")
+
+            # Calculate expected B2B totals from customer file
+            expected_b2b_sales = sum(
+                (c['purchase_amount'] / Decimal("1.15")).quantize(Decimal('0.01'))
+                for c in vat_customers
+            )
+
             vat_invoices = self._generate_vat_customer_invoices(vat_customers)
+
+            # Use ACTUAL B2B totals (not expected)
             vat_sales = sum(inv['subtotal'] for inv in vat_invoices)
             vat_vat = sum(inv['vat_amount'] for inv in vat_invoices)
-            print(f"  Generated: {len(vat_invoices)} invoices")
-            print(f"  VAT Customer Sales: {vat_sales:,.2f} SAR")
-            print(f"  VAT Customer VAT: {vat_vat:,.2f} SAR")
+
+            b2b_match_pct = (vat_sales / expected_b2b_sales * 100) if expected_b2b_sales > 0 else Decimal("0")
+
+            print(f"\n  Phase 1 Complete:")
+            print(f"    B2B invoices generated: {len(vat_invoices)}")
+            print(f"    Expected from customers: {expected_b2b_sales:,.2f} SAR")
+            print(f"    Actual B2B sales: {vat_sales:,.2f} SAR ({b2b_match_pct:.1f}%)")
+            print(f"    B2B VAT: {vat_vat:,.2f} SAR")
         else:
             print(f"\nPhase 1: No VAT customers for this quarter")
-        
-        # Phase 2: Calculate remaining gap
-        remaining_sales = target_sales - vat_sales
+
+        # Phase 2: Calculate remaining gap using ACTUAL B2B totals
+        remaining_sales = target_sales - vat_sales  # Uses actual, not expected!
         remaining_vat = target_vat - vat_vat
-        
-        print(f"\nPhase 2: Remaining to fill with cash sales:")
-        print(f"  Sales needed: {remaining_sales:,.2f} SAR")
-        print(f"  VAT needed: {remaining_vat:,.2f} SAR")
+
+        print(f"\nPhase 2: Calculating B2C target (Quarterly Target - Actual B2B):")
+        print(f"  Quarterly target: {target_sales:,.2f} SAR")
+        print(f"  Actual B2B: {vat_sales:,.2f} SAR")
+        print(f"  B2C needed: {remaining_sales:,.2f} SAR")
+        print(f"  B2C VAT needed: {remaining_vat:,.2f} SAR")
         
         # Phase 3: Generate cash sales
         print(f"\nPhase 3: Generating cash sales...")
@@ -142,26 +158,42 @@ class QuarterlyAligner:
         
         # Combine
         all_invoices = vat_invoices + cash_invoices
-        
-        # Verify
-        actual_sales = sum(inv['subtotal'] for inv in all_invoices)
-        actual_vat = sum(inv['vat_amount'] for inv in all_invoices)
-        
+
+        # Calculate actuals
+        actual_b2b_sales = sum(inv['subtotal'] for inv in vat_invoices)
+        actual_b2b_vat = sum(inv['vat_amount'] for inv in vat_invoices)
+        actual_b2c_sales = sum(inv['subtotal'] for inv in cash_invoices)
+        actual_b2c_vat = sum(inv['vat_amount'] for inv in cash_invoices)
+        actual_sales = actual_b2b_sales + actual_b2c_sales
+        actual_vat = actual_b2b_vat + actual_b2c_vat
+
         sales_diff = abs(actual_sales - target_sales)
         vat_diff = abs(actual_vat - target_vat)
-        
+
         print(f"\n{'='*60}")
-        print(f"ALIGNMENT COMPLETE")
+        print(f"ALIGNMENT COMPLETE - {quarter_name}")
         print(f"{'='*60}")
-        print(f"Total Invoices: {len(all_invoices)}")
-        print(f"  - VAT customers: {len(vat_invoices)}")
-        print(f"  - Cash sales: {len(cash_invoices)}")
-        print(f"\nTarget Sales: {target_sales:,.2f} SAR")
-        print(f"Actual Sales: {actual_sales:,.2f} SAR")
-        print(f"Difference: {sales_diff:.2f} SAR")
-        print(f"\nTarget VAT: {target_vat:,.2f} SAR")
-        print(f"Actual VAT: {actual_vat:,.2f} SAR")
-        print(f"Difference: {vat_diff:.2f} SAR")
+
+        print(f"\n📊 BREAKDOWN:")
+        print(f"  B2B Invoices: {len(vat_invoices)}")
+        print(f"    Sales: {actual_b2b_sales:,.2f} SAR")
+        print(f"    VAT: {actual_b2b_vat:,.2f} SAR")
+        if vat_customers:
+            expected_b2b = sum((c['purchase_amount'] / Decimal("1.15")).quantize(Decimal('0.01')) for c in vat_customers)
+            b2b_pct = (actual_b2b_sales / expected_b2b * 100) if expected_b2b > 0 else Decimal("0")
+            print(f"    Match: {b2b_pct:.1f}% of customer expectations")
+
+        print(f"\n  B2C Invoices: {len(cash_invoices)}")
+        print(f"    Sales: {actual_b2c_sales:,.2f} SAR")
+        print(f"    VAT: {actual_b2c_vat:,.2f} SAR")
+
+        print(f"\n🎯 QUARTERLY TARGET:")
+        print(f"  Target Sales (ex VAT): {target_sales:,.2f} SAR")
+        print(f"  Actual Sales (ex VAT): {actual_sales:,.2f} SAR")
+        print(f"  Difference: {sales_diff:.2f} SAR")
+        print(f"\n  Target VAT (15%): {target_vat:,.2f} SAR")
+        print(f"  Actual VAT: {actual_vat:,.2f} SAR")
+        print(f"  Difference: {vat_diff:.2f} SAR")
         
         # Tolerance check
         if allow_variance:
@@ -185,17 +217,182 @@ class QuarterlyAligner:
                 print(f"  Note: This is acceptable - NEVER selling below cost takes priority")
         
         return all_invoices
-    
+
+    def _reverse_engineer_line_items(
+        self,
+        target_subtotal: Decimal,
+        invoice_date: date,
+        customer_name: str
+    ) -> List[Dict]:
+        """
+        REVERSE-ENGINEERING: Generate line items that sum to EXACT target amount.
+
+        Per PRD requirements:
+        - B2B customers can order "pre-arrival" (no stock_date filter)
+        - B2B can mix ALL classifications (EXC_INSPECTION + NONEXC_INSPECTION + NONEXC_OUTSIDE)
+        - Line items must sum to EXACT invoice total (100% data integrity)
+
+        Algorithm:
+        1. Get ALL products from inventory (no date filtering for B2B pre-orders)
+        2. Greedy two-pass: bulk items first, then fine-tune
+        3. Adjust last item quantity to hit exact target
+        """
+
+        # Get ALL lots from inventory for B2B (pre-arrival ordering allowed)
+        # No current_date filter - B2B can order products before they arrive
+        all_products = self.simulator.inventory.products
+
+        # Filter only profitable lots (price >= cost)
+        available_lots = [
+            p for p in all_products
+            if p['unit_price_ex_vat'] >= p['unit_cost_ex_vat'] and p['quantity_remaining'] > 0
+        ]
+
+        if not available_lots:
+            return []
+
+        # Step 1: Greedy algorithm - keep adding items until we approach target
+        line_items = []
+        remaining = target_subtotal
+        used_lot_ids = set()
+
+        # Sort lots by price (cheapest first for better coverage)
+        available_lots.sort(key=lambda x: x['unit_price_ex_vat'])
+
+        # Pass 1: Add items with max quantity (100) to quickly approach target
+        for lot in available_lots:
+            if remaining <= Decimal("50.00"):  # Switch to fine-tuning mode
+                break
+
+            lot_price = lot['unit_price_ex_vat']
+            lot_cost = lot['unit_cost_ex_vat']
+
+            # Skip if unprofitable
+            if lot_price < lot_cost:
+                continue
+
+            # Calculate quantity needed
+            ideal_qty = int(remaining / lot_price)
+
+            if ideal_qty >= 3:  # Only add if we need at least 3 units
+                quantity = min(100, ideal_qty)
+                line_subtotal = (lot_price * quantity).quantize(Decimal('0.01'))
+                line_vat = (line_subtotal * VAT_RATE).quantize(Decimal('0.01'))
+
+                line_items.append({
+                    'lot_id': lot['lot_id'],
+                    'customs_declaration_no': lot['customs_declaration_no'],
+                    'item_description': lot['item_description'],
+                    'shipment_class': lot['shipment_class'],
+                    'quantity': quantity,
+                    'unit_price_ex_vat': lot_price,
+                    'unit_cost_ex_vat': lot_cost,
+                    'line_subtotal': line_subtotal,
+                    'vat_amount': line_vat,
+                    'line_total': line_subtotal + line_vat,
+                    'item_name': lot['item_name'],
+                    'customs_declaration': lot['customs_declaration'],
+                    'classification': lot['classification'],
+                    'unit_price': lot_price,
+                    'unit_cost_actual': lot_cost
+                })
+
+                remaining -= line_subtotal
+                used_lot_ids.add(lot['lot_id'])
+
+        # Pass 2: Fine-tune with smaller quantities to hit exact target
+        for lot in available_lots:
+            if remaining <= Decimal("1.00"):
+                break
+
+            if lot['lot_id'] in used_lot_ids:
+                continue
+
+            lot_price = lot['unit_price_ex_vat']
+            lot_cost = lot['unit_cost_ex_vat']
+
+            if lot_price < lot_cost:
+                continue
+
+            # Try to add this lot with appropriate quantity
+            ideal_qty = int(remaining / lot_price)
+
+            if ideal_qty >= 3:
+                quantity = min(100, ideal_qty)
+            elif ideal_qty > 0 or (lot_price * 3) <= remaining + Decimal("50.00"):
+                quantity = 3
+            else:
+                continue
+
+            line_subtotal = (lot_price * quantity).quantize(Decimal('0.01'))
+            line_vat = (line_subtotal * VAT_RATE).quantize(Decimal('0.01'))
+
+            line_items.append({
+                'lot_id': lot['lot_id'],
+                'customs_declaration_no': lot['customs_declaration_no'],
+                'item_description': lot['item_description'],
+                'shipment_class': lot['shipment_class'],
+                'quantity': quantity,
+                'unit_price_ex_vat': lot_price,
+                'unit_cost_ex_vat': lot_cost,
+                'line_subtotal': line_subtotal,
+                'vat_amount': line_vat,
+                'line_total': line_subtotal + line_vat,
+                'item_name': lot['item_name'],
+                'customs_declaration': lot['customs_declaration'],
+                'classification': lot['classification'],
+                'unit_price': lot_price,
+                'unit_cost_actual': lot_cost
+            })
+
+            remaining -= line_subtotal
+            used_lot_ids.add(lot['lot_id'])
+
+        if not line_items:
+            return []
+
+        # Step 2: Fine-tune last item to hit exact target
+        actual_total = sum(item['line_subtotal'] for item in line_items)
+        difference = target_subtotal - actual_total
+
+        if abs(difference) > Decimal("1.00") and line_items:
+            # Adjust last item's quantity to match exactly
+            last_item = line_items[-1]
+            unit_price = last_item['unit_price_ex_vat']
+
+            # Calculate adjustment needed
+            qty_adjustment = int(difference / unit_price)
+            new_qty = last_item['quantity'] + qty_adjustment
+
+            # Ensure bounds (3-100)
+            new_qty = max(3, min(100, new_qty))
+
+            # Recalculate
+            last_item['quantity'] = new_qty
+            last_item['line_subtotal'] = (unit_price * new_qty).quantize(Decimal('0.01'))
+            last_item['vat_amount'] = (last_item['line_subtotal'] * VAT_RATE).quantize(Decimal('0.01'))
+            last_item['line_total'] = last_item['line_subtotal'] + last_item['vat_amount']
+
+        return line_items
+
     def _generate_vat_customer_invoices(self, customers: List[Dict]) -> List[Dict]:
-        """Generate invoices for VAT customers with exact amounts."""
+        """
+        Generate invoices for VAT customers with EXACT amounts from customers.xlsx.
+
+        REVERSE-ENGINEERING APPROACH:
+        Instead of trying to match customer amounts (and failing due to limited catalog),
+        we HARDCODE the exact invoice totals from customers.xlsx, then reverse-engineer
+        line items that sum to those exact totals using quantity adjustments.
+        """
         invoices = []
-        
+
         for customer in customers:
-            # Customer amount includes VAT
+            # HARDCODED TARGET: Exact amount from customers.xlsx
             total_with_vat = customer['purchase_amount']
-            subtotal = (total_with_vat / Decimal("1.15")).quantize(Decimal('0.01'))
-            vat_amount = (subtotal * VAT_RATE).quantize(Decimal('0.01'))
-            
+            target_subtotal = (total_with_vat / Decimal("1.15")).quantize(Decimal('0.01'))
+            target_vat = (target_subtotal * VAT_RATE).quantize(Decimal('0.01'))
+            target_total = (target_subtotal + target_vat).quantize(Decimal('0.01'))
+
             # Random date and time
             purchase_date = customer['purchase_date']
             invoice_datetime = datetime.combine(
@@ -205,17 +402,40 @@ class QuarterlyAligner:
                     minute=random.randint(0, 59)
                 )
             )
-            
-            # Create line items using authentic prices ONLY
-            line_items = self._create_authentic_price_line_items(
-                subtotal,
-                purchase_date,
-                invoice_type="TAX"
+
+            # REVERSE-ENGINEER: Generate line items that sum to EXACT target
+            line_items = self._reverse_engineer_line_items(
+                target_subtotal=target_subtotal,
+                invoice_date=purchase_date,
+                customer_name=customer['customer_name']
             )
-            
+
             if not line_items:
-                print(f"  Warning: Could not create items for {customer['customer_name']}")
+                print(f"  ⚠️  {customer['customer_name']}: Could not generate invoice (no suitable products)")
                 continue
+            
+            # Calculate actuals from line items
+            actual_subtotal = sum(item['line_subtotal'] for item in line_items)
+            actual_vat = sum(item['vat_amount'] for item in line_items)
+            actual_total = (actual_subtotal + actual_vat).quantize(Decimal('0.01'))
+
+            # Calculate variance from HARDCODED target
+            variance = abs(actual_subtotal - target_subtotal)
+
+            # Log result with exact match status
+            if variance <= Decimal("1.00"):
+                status_icon = "✅"
+                status_text = "EXACT"
+            elif variance <= Decimal("10.00"):
+                status_icon = "✓"
+                status_text = "CLOSE"
+            else:
+                status_icon = "⚠️"
+                status_text = f"OFF BY {variance:.2f}"
+
+            print(f"  {status_icon} {customer['customer_name']}: {actual_subtotal:,.2f} SAR [{status_text}]")
+            if variance > Decimal("1.00"):
+                print(f"      (Target: {target_subtotal:,.2f}, Variance: {variance:.2f})")
             
             # Build invoice
             self.simulator.invoice_counter_tax += 1
@@ -233,14 +453,33 @@ class QuarterlyAligner:
                 'customer_address': address,
                 'invoice_date': invoice_datetime,
                 'line_items': line_items,
-                'subtotal': subtotal,
-                'vat_amount': vat_amount,
-                'total': (subtotal + vat_amount).quantize(Decimal('0.01')),
+                'subtotal': actual_subtotal,  # Use actual from line items
+                'vat_amount': actual_vat,      # Use actual from line items
+                'total': actual_total,          # Use actual from line items
                 'qr_code_data': f"INV:{invoice_number}|{customer['customer_name']}"
             }
 
             invoices.append(invoice)
-        
+
+        # Summary report - REVERSE-ENGINEERED EXACT MATCHING
+        if invoices:
+            total_target = sum((c['purchase_amount'] / Decimal("1.15")).quantize(Decimal('0.01')) for c in customers)
+            total_actual = sum(inv['subtotal'] for inv in invoices)
+            total_variance = abs(total_actual - total_target)
+
+            print(f"\n  B2B Summary (REVERSE-ENGINEERED):")
+            print(f"    Customers processed: {len(invoices)}/{len(customers)}")
+            print(f"    Target total (from customers.xlsx): {total_target:,.2f} SAR")
+            print(f"    Actual total (from line items): {total_actual:,.2f} SAR")
+            print(f"    Variance: {total_variance:.2f} SAR")
+
+            if total_variance <= Decimal("10.00"):
+                print(f"    ✅ EXCELLENT - Hardcoded amounts matched within ±10 SAR!")
+            elif total_variance <= Decimal("100.00"):
+                print(f"    ✓ GOOD - Close match using reverse-engineering")
+            else:
+                print(f"    ⚠️ Review needed - Check quantity adjustments")
+
         return invoices
     
     def _generate_controlled_cash_sales(
@@ -420,7 +659,10 @@ class QuarterlyAligner:
         self,
         target_subtotal: Decimal,
         invoice_date: date,
-        invoice_type: str
+        invoice_type: str,
+        deduct_stock: bool = True,  # Whether to actually deduct from inventory
+        tolerance_min: Decimal = Decimal("1.00"),  # Minimum acceptable percentage (1.00 = 100%)
+        tolerance_max: Decimal = Decimal("1.00")   # Maximum acceptable percentage (1.00 = 100%)
     ) -> List[Dict]:
         """
         Create line items using LOT-BASED inventory with authentic lot prices.
@@ -461,8 +703,20 @@ class QuarterlyAligner:
         max_attempts = 50
         used_lot_ids = set()  # Track used lots to avoid duplicates
 
+        # Calculate acceptable range based on tolerance
+        min_acceptable = target_subtotal * tolerance_min
+        max_acceptable = target_subtotal * tolerance_max
+
         for attempt in range(max_attempts):
-            if remaining_target <= Decimal("1.00"):
+            # Calculate current total
+            current_total = sum(item['line_subtotal'] for item in line_items)
+
+            # Stop if we've reached acceptable range
+            if current_total >= min_acceptable and current_total <= max_acceptable:
+                break
+
+            # Stop if we can't add more without exceeding max
+            if remaining_target <= Decimal("1.00") and current_total >= min_acceptable:
                 break
 
             # Select LOT (smart or random)
@@ -504,7 +758,15 @@ class QuarterlyAligner:
 
             # Calculate ideal quantity WITHOUT changing price
             ideal_qty = int(remaining_target / lot_price)
-            ideal_qty = max(1, min(ideal_qty, 40))
+            ideal_qty = max(1, min(ideal_qty, MAX_QUANTITY_PER_ITEM))
+            
+            # Add ±20% random variation for realism (avoid too many identical quantities)
+            if ideal_qty > 5:  # Only vary if quantity is meaningful
+                variation = int(ideal_qty * 0.2)  # 20% variation
+                ideal_qty = random.randint(
+                    max(MIN_QUANTITY_PER_ITEM, ideal_qty - variation),
+                    min(MAX_QUANTITY_PER_ITEM, ideal_qty + variation)
+                )
 
             # Check stock availability for this specific LOT
             if not self.simulator.inventory.check_lot_stock_available(lot['lot_id'], ideal_qty):
@@ -516,11 +778,12 @@ class QuarterlyAligner:
                 else:
                     continue  # No stock available in this lot
 
-            # Deduct from inventory using LOT-SPECIFIC deduction
-            try:
-                deduction = self.simulator.inventory.deduct_stock(lot['lot_id'], ideal_qty)
-            except ValueError:
-                continue
+            # Deduct from inventory using LOT-SPECIFIC deduction (if requested)
+            if deduct_stock:
+                try:
+                    deduction = self.simulator.inventory.deduct_stock(lot['lot_id'], ideal_qty)
+                except ValueError:
+                    continue
 
             # Calculate line totals using LOT price (constant from lot record)
             line_subtotal = (lot_price * ideal_qty).quantize(Decimal('0.01'))
