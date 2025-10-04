@@ -49,9 +49,11 @@ class ReportGenerator:
         """
         Generate detailed sales report (one row per line item).
         
-        Per BRD: Columns should be:
+        Per PRD: Columns should be:
         - Invoice Number
         - Invoice Date
+        - Customs Declaration No (NEW - Lot tracking)
+        - Lot ID (NEW - Lot tracking)
         - Item Name
         - Unit Price (before VAT)
         - Quantity
@@ -83,8 +85,10 @@ class ReportGenerator:
                 row = {
                     'رقم الفاتورة': invoice_number,
                     'تاريخ الفاتورة': formatted_date,
-                    'اسم الصنف': item['item_name'],
-                    'سعر الوحدة (قبل الضريبة)': float(item['unit_price']),
+                    'رقم البيان الجمركي': item['customs_declaration_no'],  # NEW: Lot tracking
+                    'معرف اللوت': item['lot_id'],                          # NEW: Lot tracking
+                    'اسم الصنف': item['item_description'],                 # UPDATED: PRD-compliant field
+                    'سعر الوحدة (قبل الضريبة)': float(item['unit_price_ex_vat']),  # UPDATED: PRD-compliant field
                     'الكمية': item['quantity'],
                     'المجموع قبل الضريبة': float(item['line_subtotal']),
                     'مبلغ الضريبة': float(item['vat_amount']),

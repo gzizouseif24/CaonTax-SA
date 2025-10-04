@@ -3,6 +3,8 @@ from decimal import Decimal
 from typing import List, Dict
 from simulation import SalesSimulator
 from config import VAT_RATE, TOLERANCE, CASH_CUSTOMER_NAME
+from smart_sales import SmartSalesGenerator
+from refinement import refine_with_smart_adjustments
 import random
 
 
@@ -10,10 +12,30 @@ class QuarterlyAligner:
     """
     Aligns simulated sales to exact quarterly targets.
     CRITICAL: NEVER sells below cost. Tracks actual FIFO costs for accurate profitability.
+    
+    Now supports SMART SALES GENERATION with realistic patterns!
     """
     
-    def __init__(self, simulator: SalesSimulator):
+    def __init__(self, simulator: SalesSimulator, use_smart_algorithm: bool = True):
+        """
+        Initialize quarterly aligner.
+        
+        Args:
+            simulator: SalesSimulator instance
+            use_smart_algorithm: If True, use smart weighted algorithms (recommended)
+                                If False, use legacy random algorithms
+        """
         self.simulator = simulator
+        self.use_smart_algorithm = use_smart_algorithm
+        
+        # Initialize smart sales generator if enabled
+        if self.use_smart_algorithm:
+            self.smart_generator = SmartSalesGenerator(
+                inventory=simulator.inventory,
+                holidays=simulator.holidays,
+                random_seed=42  # For reproducibility
+            )
+            print(f"✨ Smart Sales Algorithm ENABLED - Using realistic weighted patterns")
     
     def align_quarter(
         self,
@@ -258,7 +280,7 @@ class QuarterlyAligner:
         # For 2023: Try to generate enough invoices to approach target
         # For 2024: Generate just enough to hit target
         if allow_variance:
-            max_invoices = len(working_days) * 30  # Reasonable attempts for 2023
+            max_invoices = len(working_days) * 50  # More attempts for 2023 to reach target
         else:
             max_invoices = len(working_days) * 20  # Current logic for 2024
         
@@ -269,11 +291,11 @@ class QuarterlyAligner:
             
             if allow_variance:
                 # 2023: Aim for target, but accept 80-120% range (best effort)
-                if actual_sales >= target_sales * Decimal("1.1"):
-                    print(f"    Reached 110% of target, stopping (2023 best effort)")
+                if actual_sales >= target_sales * Decimal("1.2"):
+                    print(f"    Reached 120% of target, stopping (2023 best effort)")
                     break
-                # Also stop if we're very close to target
-                if actual_sales >= target_sales * Decimal("0.95") and remaining_sales <= Decimal("5000.00"):
+                # Also stop if we're very close to target (within 1%)
+                if actual_sales >= target_sales * Decimal("0.99") and remaining_sales <= Decimal("1000.00"):
                     print(f"    Close enough to target (2023 best effort)")
                     break
             else:
@@ -281,7 +303,7 @@ class QuarterlyAligner:
                 if remaining_sales <= Decimal("0.10"):
                     break
             
-            # Select random working day (prefer days with stock)
+            # Select working day (smart or random)
             # For Q3-2023, this will naturally prefer late September when stock arrives
             available_dates = [
                 d for d in working_days 
@@ -294,15 +316,41 @@ class QuarterlyAligner:
                     print(f"    No more inventory available")
                 break
             
-            invoice_date = random.choice(available_dates)
+            # SMART: Use weighted date selection
+            if self.use_smart_algorithm:
+                invoice_date = self.smart_generator.get_weighted_date(
+                    available_dates,
+                    start_date,
+                    end_date
+                )
+            else:
+                # LEGACY: Random selection
+                invoice_date = random.choice(available_dates)
             
             # Target size for this invoice
-            if allow_variance:
-                # 2023: Random invoice size between 1000-5000 SAR
-                target_invoice_size = Decimal(str(random.randint(1000, 5000)))
+            if self.use_smart_algorithm:
+                # SMART: Calculate realistic size using normal distribution
+                days_left = len([d for d in working_days if d >= invoice_date])
+                target_invoice_size = self.smart_generator.calculate_invoice_size(
+                    invoice_date,
+                    remaining_sales,
+                    days_left,
+                    start_date,
+                    end_date
+                )
             else:
-                # 2024: Size based on remaining target
-                target_invoice_size = min(remaining_sales, Decimal("3000.00"))
+                # LEGACY: Random sizes
+                if allow_variance:
+                    # 2023: More aggressive invoice sizes to reach target faster
+                    if remaining_sales > Decimal("50000"):
+                        target_invoice_size = Decimal(str(random.randint(2000, 8000)))
+                    elif remaining_sales > Decimal("10000"):
+                        target_invoice_size = Decimal(str(random.randint(1000, 5000)))
+                    else:
+                        target_invoice_size = Decimal(str(random.randint(500, 2000)))
+                else:
+                    # 2024: Size based on remaining target
+                    target_invoice_size = min(remaining_sales, Decimal("3000.00"))
             
             # Create invoice using authentic prices ONLY
             line_items = self._create_authentic_price_line_items(
@@ -356,6 +404,16 @@ class QuarterlyAligner:
             coverage_pct = (actual_sales / target_sales * 100) if target_sales > 0 else 0
             print(f"    Coverage: {coverage_pct:.1f}% of target")
         
+        # ITERATIVE REFINEMENT: Fine-tune to match target precisely
+        # Only for 2024 (strict mode) or if smart algorithm is enabled
+        if not allow_variance or self.use_smart_algorithm:
+            target_total_inc_vat = (target_sales + target_vat).quantize(Decimal('0.01'))
+            invoices = refine_with_smart_adjustments(
+                invoices,
+                target_total_inc_vat,
+                tolerance=Decimal("5.00") if not allow_variance else Decimal("50.00")
+            )
+        
         return invoices
     
     def _create_authentic_price_line_items(
@@ -407,12 +465,33 @@ class QuarterlyAligner:
             if remaining_target <= Decimal("1.00"):
                 break
 
-            # Select random LOT
-            lot = random.choice(available_lots)
-
-            # Skip if already used this lot
-            if lot['lot_id'] in used_lot_ids:
-                continue
+            # Select LOT (smart or random)
+            if self.use_smart_algorithm:
+                # SMART: Use weighted selection based on popularity
+                # Filter out already used lots
+                available_for_selection = [
+                    lot for lot in available_lots
+                    if lot['lot_id'] not in used_lot_ids
+                ]
+                if not available_for_selection:
+                    break
+                
+                # Select using smart weighting
+                selected_lots = self.smart_generator.select_weighted_products(
+                    available_for_selection,
+                    invoice_date,
+                    num_items=1
+                )
+                if not selected_lots:
+                    break
+                lot = selected_lots[0]
+            else:
+                # LEGACY: Random selection
+                lot = random.choice(available_lots)
+                
+                # Skip if already used this lot
+                if lot['lot_id'] in used_lot_ids:
+                    continue
 
             # Get LOT-SPECIFIC price and cost
             lot_price = lot['unit_price_ex_vat']
