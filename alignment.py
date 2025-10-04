@@ -20,19 +20,36 @@ class QuarterlyAligner:
         quarter_name: str,
         start_date: date,
         end_date: date,
-        target_sales: Decimal,
-        target_vat: Decimal,
+        target_sales: Decimal = None,  # Legacy: ex-VAT sales
+        target_vat: Decimal = None,    # Legacy: VAT amount
+        target_total_inc_vat: Decimal = None,  # NEW: Total inc VAT (PRD-compliant)
         vat_customers: List[Dict] = None,
-        allow_variance: bool = False  # NEW: Flexible for 2023
+        allow_variance: bool = False  # Flexible for 2023
     ) -> List[Dict]:
-        """Generate invoices matching exact quarterly targets."""
-        
+        """
+        Generate invoices matching exact quarterly targets.
+        Now supports sales_inc_vat (PRD-compliant) or legacy sales+vat format.
+        """
+
+        # Handle both new and legacy formats
+        if target_total_inc_vat is not None:
+            # NEW format: sales_inc_vat
+            total_inc_vat = target_total_inc_vat
+            target_sales = (total_inc_vat / Decimal("1.15")).quantize(Decimal('0.01'))
+            target_vat = total_inc_vat - target_sales
+        elif target_sales is not None and target_vat is not None:
+            # LEGACY format: separate sales and VAT
+            total_inc_vat = target_sales + target_vat
+        else:
+            raise ValueError("Must provide either target_total_inc_vat or both target_sales and target_vat")
+
         print(f"\n{'='*60}")
         print(f"ALIGNING {quarter_name}")
         print(f"{'='*60}")
         print(f"Period: {start_date} to {end_date}")
-        print(f"Target Sales: {target_sales:,.2f} SAR")
-        print(f"Target VAT: {target_vat:,.2f} SAR")
+        print(f"Target Total (inc VAT): {total_inc_vat:,.2f} SAR")
+        print(f"Target Sales (ex VAT): {target_sales:,.2f} SAR")
+        print(f"Target VAT (15%): {target_vat:,.2f} SAR")
         
         if allow_variance:
             print(f"Mode: 2023 (Best Effort - Accept any total)")
@@ -348,96 +365,124 @@ class QuarterlyAligner:
         invoice_type: str
     ) -> List[Dict]:
         """
-        Create line items using ONLY authentic Excel prices.
-        NOW TRACKS ACTUAL FIFO COSTS for accurate profitability validation.
+        Create line items using LOT-BASED inventory with authentic lot prices.
+        CRITICAL: Each line item tracks its lot_id for PRD compliance.
+        If same item from multiple lots, creates SEPARATE line items.
         """
-        
-        # Get available items by classification
+
+        # Get available LOTS by classification (not aggregated items)
         from config import UNDER_NON_SELECTIVE, UNDER_SELECTIVE, OUTSIDE_INSPECTION
-        
+
         if invoice_type == "TAX":
-            available = self.simulator.inventory.get_available_items_by_classification(UNDER_NON_SELECTIVE)
-        else:
-            available = (
-                self.simulator.inventory.get_available_items_by_classification(UNDER_NON_SELECTIVE) +
-                self.simulator.inventory.get_available_items_by_classification(UNDER_SELECTIVE) +
-                self.simulator.inventory.get_available_items_by_classification(OUTSIDE_INSPECTION)
+            available_lots = self.simulator.inventory.get_available_lots_by_classification(
+                UNDER_NON_SELECTIVE,
+                current_date=invoice_date
             )
-        
-        # Filter by stock date
-        available = [item for item in available if item['stock_date'] <= invoice_date]
-        
-        if not available:
+        else:
+            available_lots = (
+                self.simulator.inventory.get_available_lots_by_classification(
+                    UNDER_NON_SELECTIVE,
+                    current_date=invoice_date
+                ) +
+                self.simulator.inventory.get_available_lots_by_classification(
+                    UNDER_SELECTIVE,
+                    current_date=invoice_date
+                ) +
+                self.simulator.inventory.get_available_lots_by_classification(
+                    OUTSIDE_INSPECTION,
+                    current_date=invoice_date
+                )
+            )
+
+        if not available_lots:
             return []
-        
-        # Build line items approaching target
+
+        # Build line items approaching target - ONE LINE PER LOT
         line_items = []
         remaining_target = target_subtotal
         max_attempts = 50
-        
+        used_lot_ids = set()  # Track used lots to avoid duplicates
+
         for attempt in range(max_attempts):
             if remaining_target <= Decimal("1.00"):
                 break
-            
-            # Select random product
-            product = random.choice(available)
-            
-            # Get AUTHENTIC price from Excel (use the product's own price, not FIFO)
-            excel_price = product['unit_price_before_vat']
-            excel_cost = product['unit_cost']
-            
-            # CRITICAL VALIDATION: Ensure Excel price is profitable
-            if excel_price < excel_cost:
-                print(f"  ⚠️ Skipping {product['item_name']} - Excel price {excel_price} below cost {excel_cost}")
+
+            # Select random LOT
+            lot = random.choice(available_lots)
+
+            # Skip if already used this lot
+            if lot['lot_id'] in used_lot_ids:
                 continue
-            
+
+            # Get LOT-SPECIFIC price and cost
+            lot_price = lot['unit_price_ex_vat']
+            lot_cost = lot['unit_cost_ex_vat']
+
+            # CRITICAL VALIDATION: Ensure lot price is profitable
+            if lot_price < lot_cost:
+                print(f"  ⚠️ Skipping lot {lot['lot_id']} - price {lot_price} below cost {lot_cost}")
+                continue
+
             # Calculate ideal quantity WITHOUT changing price
-            ideal_qty = int(remaining_target / excel_price)
+            ideal_qty = int(remaining_target / lot_price)
             ideal_qty = max(1, min(ideal_qty, 40))
-            
-            # Check stock availability
-            available_qty = self.simulator.inventory.get_available_quantity(product['item_name'])
-            
-            if available_qty < 1:
-                continue
-            
-            # Use minimum of ideal and available
-            qty = min(ideal_qty, available_qty)
-            
-            # Deduct from inventory (FIFO for tracking only, not for pricing)
+
+            # Check stock availability for this specific LOT
+            if not self.simulator.inventory.check_lot_stock_available(lot['lot_id'], ideal_qty):
+                # Try smaller quantity
+                for qty in [30, 20, 10, 5, 3, 1]:
+                    if self.simulator.inventory.check_lot_stock_available(lot['lot_id'], qty):
+                        ideal_qty = qty
+                        break
+                else:
+                    continue  # No stock available in this lot
+
+            # Deduct from inventory using LOT-SPECIFIC deduction
             try:
-                deductions = self.simulator.inventory.deduct_stock(product['item_name'], qty)
+                deduction = self.simulator.inventory.deduct_stock(lot['lot_id'], ideal_qty)
             except ValueError:
                 continue
-            
-            # Calculate line totals using EXCEL price (constant from product record)
-            line_subtotal = (excel_price * qty).quantize(Decimal('0.01'))
+
+            # Calculate line totals using LOT price (constant from lot record)
+            line_subtotal = (lot_price * ideal_qty).quantize(Decimal('0.01'))
             line_vat = (line_subtotal * VAT_RATE).quantize(Decimal('0.01'))
-            
+
             # Only add if it doesn't overshoot target too much
             if line_subtotal <= remaining_target + Decimal("100.00"):
+                # Create line item with LOT tracking (PRD-compliant)
                 line_items.append({
-                    'item_name': product['item_name'],
-                    'quantity': qty,
-                    'unit_price': excel_price,  # Excel price (constant)
-                    'unit_cost_actual': excel_cost,  # Excel cost (constant)
+                    # PRD-compliant fields
+                    'lot_id': lot['lot_id'],
+                    'customs_declaration_no': lot['customs_declaration_no'],
+                    'item_description': lot['item_description'],
+                    'shipment_class': lot['shipment_class'],
+                    'quantity': ideal_qty,
+                    'unit_price_ex_vat': lot_price,
+                    'unit_cost_ex_vat': lot_cost,  # For profitability validation
                     'line_subtotal': line_subtotal,
                     'vat_amount': line_vat,
                     'line_total': line_subtotal + line_vat,
-                    'classification': product['classification']
+
+                    # Legacy fields for backward compatibility
+                    'item_name': lot['item_name'],
+                    'customs_declaration': lot['customs_declaration'],
+                    'classification': lot['classification'],
+                    'unit_price': lot_price,
+                    'unit_cost_actual': lot_cost
                 })
-                
+
                 remaining_target -= line_subtotal
-        
+                used_lot_ids.add(lot['lot_id'])
+
         return line_items
     
     def validate_invoice_prices(self, invoices: List[Dict]) -> bool:
         """
-        Validate that ALL invoice prices are profitable using ACTUAL FIFO costs.
-        NOW USES STORED COSTS for accurate validation.
+        Validate that ALL invoice prices match their LOT-SPECIFIC prices and are profitable.
+        Each line item's price is validated against its lot_id's actual price.
         """
         print(f"\n{'='*80}")
-        print("PROFITABILITY VALIDATION - USING ACTUAL FIFO COSTS")
+        print("PROFITABILITY & PRICE VALIDATION - LOT-BASED")
         print(f"{'='*80}")
         
         loss_sales = []

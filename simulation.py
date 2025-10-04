@@ -84,75 +84,89 @@ class SalesSimulator:
         current_date: date = None
     ) -> List[Tuple[Dict, int, Decimal]]:
         """
-        Select items for an invoice basket respecting classification rules.
-        Only select items that are in stock by current_date.
+        Select LOTS for an invoice basket respecting classification rules.
+        Now works with LOT-BASED inventory (not aggregated items).
+        Only select lots that are in stock by current_date.
+
+        Returns:
+            List of tuples: (lot_dict, quantity, lot_price)
         """
         basket = []
-        
+
         # Decide if this basket will be OUTSIDE_INSPECTION (20% chance)
         use_outside_inspection = random.random() < 0.2
-        
+
         if use_outside_inspection:
             # OUTSIDE_INSPECTION must be alone
-            available = self.inventory.get_available_items_by_classification(OUTSIDE_INSPECTION)
-            # Filter by stock date
-            if current_date:
-                available = [item for item in available if item['stock_date'] <= current_date]
-            
-            if available:
-                # Pick one random item
-                item = random.choice(available)
+            available_lots = self.inventory.get_available_lots_by_classification(
+                OUTSIDE_INSPECTION,
+                current_date=current_date
+            )
+
+            if available_lots:
+                # Pick one random LOT
+                lot = random.choice(available_lots)
                 # Try different quantities until we find one that works
                 for qty in [40, 30, 20, 10, 5, 3]:
-                    if self.inventory.check_stock_available(item['item_name'], qty):
-                        authentic_price = item['unit_price_before_vat']  # NO ADJUSTMENTS - AUTHENTIC PRICE
-                        basket.append((item, qty, authentic_price))
+                    if self.inventory.check_lot_stock_available(lot['lot_id'], qty):
+                        lot_price = lot['unit_price_ex_vat']  # LOT-SPECIFIC PRICE
+                        basket.append((lot, qty, lot_price))
                         return basket
-        
+
         # Regular basket (not OUTSIDE_INSPECTION)
         if invoice_type == "TAX":
             # TAX invoices: Only UNDER_NON_SELECTIVE
-            available = self.inventory.get_available_items_by_classification(UNDER_NON_SELECTIVE)
+            available_lots = self.inventory.get_available_lots_by_classification(
+                UNDER_NON_SELECTIVE,
+                current_date=current_date
+            )
         else:
             # SIMPLIFIED invoices: ALL classifications
-            non_selective = self.inventory.get_available_items_by_classification(UNDER_NON_SELECTIVE)
-            selective = self.inventory.get_available_items_by_classification(UNDER_SELECTIVE)
-            outside = self.inventory.get_available_items_by_classification(OUTSIDE_INSPECTION)
-            available = non_selective + selective + outside
-            
+            non_selective = self.inventory.get_available_lots_by_classification(
+                UNDER_NON_SELECTIVE,
+                current_date=current_date
+            )
+            selective = self.inventory.get_available_lots_by_classification(
+                UNDER_SELECTIVE,
+                current_date=current_date
+            )
+            outside = self.inventory.get_available_lots_by_classification(
+                OUTSIDE_INSPECTION,
+                current_date=current_date
+            )
+            available_lots = non_selective + selective + outside
+
             # Weight towards selective items (70% selective, 30% non-selective)
             if selective and non_selective:
                 if random.random() < 0.7 and selective:
-                    available = selective
+                    available_lots = selective
                 else:
-                    available = non_selective
-        
-        # Filter by stock date
-        if current_date:
-            available = [item for item in available if item['stock_date'] <= current_date]
-        
-        if not available:
-            return []  # No items available
-        
-        # Try to select items until we have at least 2 in basket
+                    available_lots = non_selective
+
+        if not available_lots:
+            return []  # No lots available
+
+        # Try to select lots until we have enough in basket
         attempts = 0
         max_attempts = num_items * 3
-        
-        while len(basket) < min(num_items, len(available)) and attempts < max_attempts:
+        selected_lot_ids = set()  # Track selected lots to avoid duplicates
+
+        while len(basket) < min(num_items, len(available_lots)) and attempts < max_attempts:
             attempts += 1
-            item = random.choice(available)
-            
-            # Skip if already in basket
-            if any(b[0]['item_name'] == item['item_name'] for b in basket):
+            lot = random.choice(available_lots)
+
+            # Skip if this specific lot already in basket
+            if lot['lot_id'] in selected_lot_ids:
                 continue
-            
+
             # Try different quantities (start high, go lower if needed)
             for qty in [40, 30, 20, 15, 10, 5, 3]:
-                if self.inventory.check_stock_available(item['item_name'], qty):
-                    authentic_price = item['unit_price_before_vat']  # NO ADJUSTMENTS - AUTHENTIC PRICE
-                    basket.append((item, qty, authentic_price))
+                if self.inventory.check_lot_stock_available(lot['lot_id'], qty):
+                    lot_price = lot['unit_price_ex_vat']  # LOT-SPECIFIC PRICE
+                    basket.append((lot, qty, lot_price))
+                    selected_lot_ids.add(lot['lot_id'])
                     break
-        
+
         return basket
     def create_invoice(
         self,
@@ -162,16 +176,17 @@ class SalesSimulator:
         invoice_date: datetime
     ) -> Dict:
         """
-        Create an invoice from a basket of items.
-        
+        Create an invoice from a basket of LOTS.
+        Now LOT-BASED: Each line item tracks lot_id and lot-specific pricing.
+
         Args:
             invoice_type: "SIMPLIFIED" or "TAX"
             customer: Customer dict (None for cash customers)
-            basket: List of (product, quantity, unit_price) tuples
+            basket: List of (lot_dict, quantity, lot_price) tuples
             invoice_date: Date and time of invoice
-            
+
         Returns:
-            Invoice dictionary
+            Invoice dictionary with lot-tracked line items
         """
         # Generate invoice number
         if invoice_type == "SIMPLIFIED":
@@ -180,40 +195,52 @@ class SalesSimulator:
         else:
             self.invoice_counter_tax += 1
             invoice_number = f"INV-TAX-{self.invoice_counter_tax:06d}"
-        
-        # Calculate line items
+
+        # Calculate line items - ONE LINE PER LOT
+        # CRITICAL: If basket has multiple lots of same item_description,
+        # each lot gets its OWN line item
         line_items = []
         subtotal = Decimal("0")
         vat_total = Decimal("0")
-        
-        for product, quantity, unit_price in basket:
-            line_subtotal = unit_price * quantity
+
+        for lot, quantity, lot_price in basket:
+            line_subtotal = lot_price * quantity
             line_vat = line_subtotal * VAT_RATE
             line_total = line_subtotal + line_vat
-            
+
+            # Create line item with LOT tracking
             line_item = {
-                'item_name': product['item_name'],
-                'customs_declaration': product['customs_declaration'],
-                'classification': product['classification'],
+                # PRD-compliant fields
+                'lot_id': lot['lot_id'],
+                'customs_declaration_no': lot['customs_declaration_no'],
+                'item_description': lot['item_description'],
+                'shipment_class': lot['shipment_class'],
                 'quantity': quantity,
-                'unit_price': unit_price,
+                'unit_price_ex_vat': lot_price,
+                'unit_cost_ex_vat': lot['unit_cost_ex_vat'],
                 'line_subtotal': line_subtotal,
                 'vat_amount': line_vat,
-                'line_total': line_total
+                'line_total': line_total,
+
+                # Legacy fields for backward compatibility
+                'item_name': lot['item_name'],
+                'customs_declaration': lot['customs_declaration'],
+                'classification': lot['classification'],
+                'unit_price': lot_price
             }
-            
+
             line_items.append(line_item)
             subtotal += line_subtotal
             vat_total += line_vat
-            
-            # Deduct from inventory
-            self.inventory.deduct_stock(product['item_name'], quantity)
-        
+
+            # Deduct from inventory using LOT-SPECIFIC deduction
+            self.inventory.deduct_stock(lot['lot_id'], quantity)
+
         # Round to 2 decimal places
         subtotal = subtotal.quantize(Decimal('0.01'))
         vat_total = vat_total.quantize(Decimal('0.01'))
         total = subtotal + vat_total
-        
+
         # Create invoice
         invoice = {
             'invoice_number': invoice_number,
@@ -228,7 +255,7 @@ class SalesSimulator:
             'total': total,
             'qr_code_data': f"INV:{invoice_number}|{SELLER_NAME}|{SELLER_ADDRESS}|{SELLER_TAX_NUMBER}"
         }
-        
+
         return invoice
     
     def generate_daily_invoices(
