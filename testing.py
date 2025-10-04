@@ -355,6 +355,10 @@ def main():
     all_results = []
     all_invoices = []
     
+    # Create output directory if it doesn't exist
+    import os
+    os.makedirs('output', exist_ok=True)
+    
     for quarter_name, target in QUARTERLY_TARGETS.items():
         # Determine VAT customers and variance mode
         if '2023' in quarter_name:
@@ -379,6 +383,15 @@ def main():
         
         all_results.append(results)
         all_invoices.extend(invoices)
+        
+        # Save quarter invoices to JSON file
+        quarter_filename = f"output/invoices_{quarter_name.replace('-', '_')}.json"
+        try:
+            with open(quarter_filename, 'w', encoding='utf-8') as f:
+                json.dump(invoices, f, indent=2, ensure_ascii=False, cls=CustomJSONEncoder)
+            print(f"💾 Saved {len(invoices)} invoices to: {quarter_filename}")
+        except Exception as e:
+            print(f"⚠️  Could not save invoices for {quarter_name}: {e}")
         
         # Show inventory state after this quarter
         print(f"\nInventory state after {quarter_name}:")
@@ -553,6 +566,10 @@ def main():
     
     if status == "PRODUCTION_READY":
         print(f"\n🎉 System is ready for production deployment!")
+        print(f"\n📊 Next Steps:")
+        print(f"   1. Review debug_results.json for detailed metrics")
+        print(f"   2. Generate reports: python generate_complete_reports.py")
+        print(f"   3. Check available reports: python list_reports.py")
         print(f"{'='*80}\n")
         return 0  # Success exit code
     else:

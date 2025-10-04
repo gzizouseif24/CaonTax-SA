@@ -6,38 +6,32 @@ from datetime import date
 # ============================================================
 QUARTERLY_TARGETS = {
     "Q3-2023": {
-        "sales": Decimal("341130.43"),
-        "vat": Decimal("51169.56"),
+        "sales": Decimal("392299.99"),
         "start": date(2023, 7, 1),
         "end": date(2023, 9, 30)
     },
     "Q4-2023": {
-        "sales": Decimal("277913.04"),
-        "vat": Decimal("41686.96"),
+        "sales": Decimal("319600.00"),
         "start": date(2023, 10, 1),
         "end": date(2023, 12, 31)
     },
     "Q1-2024": {
-        "sales": Decimal("916376.73"),
-        "vat": Decimal("137456.51"),
+        "sales": Decimal("1053833.24"),
         "start": date(2024, 1, 1),
         "end": date(2024, 3, 31)
     },
     "Q2-2024": {
-        "sales": Decimal("1211936.80"),
-        "vat": Decimal("181790.52"),
+        "sales": Decimal("1393727.32"),
         "start": date(2024, 4, 1),
         "end": date(2024, 6, 30)
     },
     "Q3-2024": {
-        "sales": Decimal("2029080.00"),
-        "vat": Decimal("304362.00"),
+        "sales": Decimal("2333442.00"),
         "start": date(2024, 7, 1),
         "end": date(2024, 9, 30)
     },
     "Q4-2024": {
-        "sales": Decimal("776215.00"),
-        "vat": Decimal("116432.25"),
+        "sales": Decimal("892647.25"),
         "start": date(2024, 10, 1),
         "end": date(2024, 12, 31)
     }
